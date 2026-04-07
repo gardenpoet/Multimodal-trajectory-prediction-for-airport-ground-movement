@@ -1,0 +1,46 @@
+# 大型数据文件
+*.h5
+*.hdf5
+*.npy
+*.npz
+*.pkl
+*.pickle
+*.csv
+*.parquet
+*.nc
+*.mat
+
+# 模型权重/checkpoint
+*.ckpt
+*.ckpt.*
+*.pb
+*.pth
+*.pt
+saved_model/
+checkpoints/
+logs/
+
+# SLURM输出日志（HPC）
+slurm-*.out
+*.out
+*.err
+
+# TensorFlow/Keras缓存
+__pycache__/
+*.pyc
+*.pyo
+.keras/
+tf_logs/
+tensorboard_logs/
+
+# 结果输出（通常很大）
+results/
+outputs/
+figures/
+plots/
+
+# 系统文件
+.DS_Store
+*.swp
+*.tmp
+~*
