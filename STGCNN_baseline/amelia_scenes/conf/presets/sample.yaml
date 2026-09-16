@@ -1,0 +1,39 @@
+# @package _global_
+# SETUP PATH NAMES
+airport: [
+  kbos,
+#  kewr,
+#  kdca,
+#  kjfk,
+#  klax,
+#  kmdw,
+#  kmsy,
+#  ksea,
+#  ksfo,
+#  panc
+] # ICAO code or use keyword all for all airportsll
+base_dir: C:\Users\exy064\OneDrive - Queen Mary, University of London\Desktop\PHD Project\Risk assessment\program\Amelia\AmeliaTF_main2\datasets\amelia
+traj_version: a10v08
+graph_version: a10v01os
+out_version: Null # Set to null to omit versioning for output
+
+# PROCESSING SETTINGS
+parallel: False
+overwrite: True
+benchmark: False
+xplane: False
+perc_process: 0.002
+seed: 42
+jobs: -1
+
+# SCENE PROCESSING SETTINGS
+pred_lens: [20, 50]
+hist_len: 10
+skip: 1
+min_agents: 2
+max_agents: 40
+min_valid_points: 2
+
+
+# GENERATE DATASET SUMMARY
+dataset_summary: True

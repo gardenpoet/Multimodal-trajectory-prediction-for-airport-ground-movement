@@ -1,0 +1,29 @@
+# STG-CNN + TXP-CNN baseline (Zhang, Zhong & Mahadevan, 2022).
+# See STGCNN_baseline/README.md for the paper reference and every judgment call made
+# while reproducing this method.
+
+_target_: amelia_tf.models.stgcnn_traj_pred.STGCNNTrajPred
+
+# Sec. 4.1: SGD, lr=0.02. Momentum/weight_decay are not specified by the paper; 0.9/0.0
+# are common PyTorch SGD defaults for this kind of model, kept here as an explicit,
+# tunable default rather than a silent one.
+optimizer:
+  lr: 0.02
+  momentum: 0.9
+  weight_decay: 0.0
+
+net:
+  _target_: amelia_tf.models.stgcnn_traj_pred.STGCNNPredictor
+  hist_len: ${data.dataset.config.hist_len}
+  pred_lens: ${data.dataset.config.pred_lens}
+
+  in_channels: 4          # (x, y, cos(heading), sin(heading)) -- Sec. 3.2.2
+  hidden_channels: 64     # STG-CNN embedding width (Chat); not specified by the paper
+  stgcnn_temporal_kernel: 3
+  num_txp_layers: 5       # paper reports 5 or 7 depending on airport (Sec. 4.1);
+                          # exposed here instead of re-tuned per airport (see README)
+  txp_kernel_size: 3
+  dropout: 0.0
+
+extra_params:
+  tag: 'stgcnn_${data.extra_params.data_prep.exp_suffix}'
