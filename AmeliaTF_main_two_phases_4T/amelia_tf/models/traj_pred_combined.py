@@ -81,11 +81,18 @@ class ModePredictionModel(LightningModule):
         """Inject class weights from datamodule for imbalanced mode classification."""
         if stage == "fit":
             dm = self.trainer.datamodule
-            if hasattr(dm, "mode_weights"):
+            if not hasattr(dm, "mode_weights"):
+                raise RuntimeError("Datamodule missing required 'mode_weights' attribute")
+            # dm.mode_weights is explicitly None when use_mode_weights=False (see
+            # datamodule.py setup()) - hasattr() alone is True either way, since the
+            # attribute always exists; must also check it isn't None before calling
+            # .to() on it, or this crashes with the mode-weighting grid disabled.
+            if dm.mode_weights is not None:
                 self.mode_weights = dm.mode_weights.to(self.device)
                 print(f"Mode weights injected: {self.mode_weights}")
             else:
-                raise RuntimeError("Datamodule missing required 'mode_weights' attribute")
+                self.mode_weights = None
+                print("use_mode_weights=False: mode classification loss is unweighted.")
 
     def _encode_rule_based_to_mode_index(self, rule_based: torch.Tensor) -> torch.Tensor:
         """Convert rule-based encoding to turn-only mode index (0-3)."""
@@ -430,11 +437,13 @@ class TrajectoryPredictionModel(LightningModule):
     def setup(self, stage: str) -> None:
         if stage == "fit":
             dm = self.trainer.datamodule
-            if hasattr(dm, "mode_weights"):
+            # Same None-vs-missing distinction as ModePredictionModel.setup(): the
+            # attribute always exists, but is None when use_mode_weights=False.
+            if getattr(dm, "mode_weights", None) is not None:
                 self.mode_weights = dm.mode_weights.to(self.device)
                 print(f"[traj] Mode weights injected: {self.mode_weights}")
             else:
-                print("[traj] datamodule has no mode_weights; score loss unweighted.")
+                print("[traj] mode_weights disabled/unavailable; score loss unweighted.")
 
     def model_step(
             self,
