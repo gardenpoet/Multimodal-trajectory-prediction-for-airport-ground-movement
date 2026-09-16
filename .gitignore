@@ -45,3 +45,4 @@ plots/
 *.tmp
 ~*
 AmeliaTF_main/datasets/
+**/out/

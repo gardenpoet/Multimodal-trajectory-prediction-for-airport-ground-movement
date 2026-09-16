@@ -2,9 +2,10 @@
 
 # specify here default configuration
 # order of defaults determines the order in which configs override each other
+
 defaults:
   - _self_
-  - data: kbos.yaml  
+  - data: kmsy.yaml  
   - model: combined_traj_pred.yaml 
   - callbacks: default.yaml
   - logger: wandb.yaml
@@ -26,6 +27,16 @@ defaults:
 
   # debugging config (enable through command line, e.g. `python train.py debug=default)
   - debug: null
+  
+ckpt_dir: ${paths.base_dir}/checkpoints
+type: Single-Airport
+ckpt: kmsy2
+mode_ckpt_path: ${ckpt_dir}/${type}/${ckpt}/mode_model/${ckpt}_twophases_4_50.ckpt
+traj_ckpt_path: ${ckpt_dir}/${type}/${ckpt}/traj_model/${ckpt}_twophases_4_50.ckpt
+
+scratch_joint: False
+e2e_finetune: False
+e2e_epochs: 10
 
 # task name, determines output directory path
 task_name: "train"
@@ -48,22 +59,16 @@ ckpt_path: null
 # seed for random number generators in pytorch, numpy and python.random
 seed: 42
 
-# ========== ????????? ==========
-# ????????
-mode_epochs: 30
-# ????????
+mode_epochs: 40
+
 traj_epochs: 100
 # early stopping patience
-patience: 30
+patience: 10
 
-# ?????????????
 run_end_to_end_test: True
 
-# ?????????????
 save_model_paths: True
 
-# ?????? model/combined_traj_pred.yaml ??????
-# ?????,????
 mode:
   epochs: ${mode_epochs}
   patience: ${patience}

@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=amelia_train
-#SBATCH --output=kbos_20.out
-#SBATCH --error=kbos_20.err
+#SBATCH --output=kmsy_20_mask.out
+#SBATCH --error=kmsy_20_mask.err
 
 #SBATCH --partition=sae
 #SBATCH --account=pilot_sae_gpu

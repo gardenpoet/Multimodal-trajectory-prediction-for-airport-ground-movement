@@ -9,16 +9,16 @@ import amelia_scenes.utils.common as C
 def run(base_dir: str, traj_version: str, split_type: str, airport: str, seed: int) -> None:
     traj_data_dir = f"traj_data_{traj_version}"
     config = EasyDict({
-        "in_data_dir": os.path.join(base_dir, traj_data_dir, 'proc_full_scenes2'),
-        "out_data_dir": os.path.join(base_dir, traj_data_dir, 'splits'),
+        "in_data_dir": os.path.join(base_dir, traj_data_dir, 'proc_full_scenes3'),
+        "out_data_dir": os.path.join(base_dir, traj_data_dir, 'splits3'),
         "seed": seed,
         "split_type": split_type,
         "random_splits": {
-            "train_val_test": [0.8, 0.2, 0.0],
+            "train_val_test": [0.7, 0.1, 0.2],
             "unseen_perc": 0.25
         },
         "day_splits": {
-            "train_val_test": [0.8, 0.2, 0.0],
+            "train_val_test": [0.8, 0.2, 0],
             "train_val_perc": 0.75,
             "unseen_perc": 0.25
         },
@@ -49,7 +49,7 @@ if __name__ == "__main__":
     parser.add_argument("--split_type", default='day',
                         choices=['random', 'day', 'month'])
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--airport", type=str, default="kbos")
+    parser.add_argument("--airport", type=str, default="all")
     args = parser.parse_args()
 
     supported_airports = C.get_available_airports(args.base_dir)

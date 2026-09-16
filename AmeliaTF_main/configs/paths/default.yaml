@@ -11,7 +11,7 @@ traj_data_version: a10v08
 traj_data_dir: ${paths.base_dir}/traj_data_${paths.traj_data_version}
 in_data_dir: ${paths.traj_data_dir}/raw_trajectories/
 
-scenes_dir: ${paths.traj_data_dir}/proc_full_scenes3/
+scenes_dir: ${paths.traj_data_dir}/proc_full_scenes/
 
 context_version: a10v01os
 context_dir: ${paths.base_dir}/graph_data_${paths.context_version}/

@@ -1,14 +1,23 @@
 #!/bin/bash
-#$ -cwd                 # ???????????????
-#$ -j y                 # ???????????
-#$ -pe smp 8           # ??12?CPU??(??GPU??12???)
-#$ -l h_rt=120:0:0        # ??4???????
-#$ -l h_vmem=7.5G       # ??????7.5GB??,??90GB??
-#$ -l gpu=1             # ??1?GPU
-#$ -l gpu_type=ampere
+#SBATCH --job-name=amelia_train
+#SBATCH --output=kmsy_mask_w_50.out
+#SBATCH --error=kmsy_mask_w_50.err
+
+#SBATCH --partition=andrena
+#SBATCH --account=pilot_andrena
+
+#SBATCH --gres=gpu:1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=60G
+#SBATCH --time=60:00:00
+
+cd $SLURM_SUBMIT_DIR
 
 module load miniforge/25.3.0
 conda activate amelia_env
 module load cuda/12.2.2-gcc-12.2.0
 
-python -m amelia_tf.train
+export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
+export HYDRA_FULL_ERROR=1
+
+python -m amelia_tf.train_two_stage

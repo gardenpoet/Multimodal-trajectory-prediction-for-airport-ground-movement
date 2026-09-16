@@ -14,11 +14,11 @@ def run(base_dir: str, traj_version: str, split_type: str, airport: str, seed: i
         "seed": seed,
         "split_type": split_type,
         "random_splits": {
-            "train_val_test": [0.8, 0.2, 0.0],
+            "train_val_test": [0.7, 0.1, 0.2],
             "unseen_perc": 0.25
         },
         "day_splits": {
-            "train_val_test": [0.8, 0.2, 0.0],
+            "train_val_test": [0.8, 0.2, 0],
             "train_val_perc": 0.75,
             "unseen_perc": 0.25
         },

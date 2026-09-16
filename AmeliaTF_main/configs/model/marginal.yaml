@@ -14,5 +14,5 @@ extra_params:
 
   plot_val: False
   plot_test: False
-  plot_every_n: 100
+  plot_every_n: 10
   plot_after_n_epochs: 0

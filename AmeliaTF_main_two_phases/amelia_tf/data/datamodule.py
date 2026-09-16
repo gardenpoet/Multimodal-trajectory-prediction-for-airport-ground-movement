@@ -139,7 +139,7 @@ def create_balanced_test_set(dataset, samples_per_class=None, random_seed=42):
         modes = item["mode_labels"].tolist()
         
         # Get ego agent
-        ego_agent_id = item.get("ego_agent_id", None)
+        ego_agent_id = item.get("ego_agent_id_test", None)
         
         if ego_agent_id is not None and ego_agent_id < len(modes):
             ego_mode = modes[ego_agent_id]
@@ -210,6 +210,57 @@ def create_balanced_test_set(dataset, samples_per_class=None, random_seed=42):
     
     log.info(f"Created balanced test set with {len(balanced_indices)} scenes")
     
+    # ========== Ego Agent ID Distribution Statistics ==========
+    log.info("=" * 50)
+    log.info("Ego Agent ID Distribution Statistics:")
+    log.info("=" * 50)
+    
+    # Collect ego_agent_id from original dataset
+    original_ego_ids = []
+    for idx in range(len(dataset)):
+        item = dataset[idx]
+        ego_agent_id = item.get("ego_agent_id_test", None)
+        if ego_agent_id is not None:
+            original_ego_ids.append(ego_agent_id)
+        else:
+            original_ego_ids.append(-1)  # Mark missing as -1
+    
+    # Count distribution of ego_agent_id in original dataset
+    from collections import Counter
+    original_ego_counts = Counter(original_ego_ids)
+    
+    log.info("Original test set ego_agent_id distribution:")
+    for agent_id, count in sorted(original_ego_counts.items()):
+        if agent_id == -1:
+            log.info(f"  Missing ego_agent_id: {count}")
+        else:
+            log.info(f"  Agent {agent_id}: {count}")
+    
+    # Collect ego_agent_id from balanced dataset
+    balanced_ego_ids = []
+    for idx in balanced_indices:
+        item = dataset[idx]
+        ego_agent_id = item.get("ego_agent_id_test", None)
+        if ego_agent_id is not None:
+            balanced_ego_ids.append(ego_agent_id)
+        else:
+            balanced_ego_ids.append(-1)
+    
+    # Count distribution of ego_agent_id in balanced dataset
+    balanced_ego_counts = Counter(balanced_ego_ids)
+    
+    log.info("\nBalanced test set ego_agent_id distribution:")
+    for agent_id, count in sorted(balanced_ego_counts.items()):
+        if agent_id == -1:
+            log.info(f"  Missing ego_agent_id: {count}")
+        else:
+            log.info(f"  Agent {agent_id}: {count}")
+    
+    # Summary
+    log.info(f"\nTotal unique agent IDs in original: {len([k for k in original_ego_counts.keys() if k >= 0])}")
+    log.info(f"Total unique agent IDs in balanced: {len([k for k in balanced_ego_counts.keys() if k >= 0])}")
+    log.info("=" * 50)
+    
     return Subset(dataset, balanced_indices)
 
 
@@ -242,11 +293,12 @@ class DataModule(LightningDataModule):
 
         assert self.task_name in self.eparams.task_names
 
-        self.use_fraction = getattr(self.eparams.data_prep, "fraction", 1.0)
+        self.use_fraction = getattr(self.eparams.data_prep, "fraction", 1)
         self.fraction_seed = 42
+        self.test_size = getattr(self.eparams.data_prep, "test_size", None)
         
         # New parameters for balanced test set
-        self.use_balanced_test = getattr(self.eparams.data_prep, "use_balanced_test", True)
+        self.use_balanced_test = getattr(self.eparams.data_prep, "use_balanced_test", False)
         self.test_balance_samples = getattr(self.eparams.data_prep, "test_balance_samples", None)
         self.balance_random_seed = getattr(self.eparams.data_prep, "balance_random_seed", 42)
 
@@ -266,7 +318,7 @@ class DataModule(LightningDataModule):
                 ["train", "val", "test"],
                 [train_list, val_list, test_list]
             ):
-                path = f"{self.data_prep.traj_data_dir}/splits/{split}_splits/{filename}.txt"
+                path = f"{self.data_prep.split_dir_}/{split}_splits/{filename}.txt"
                 with open(path, "r") as fp:
                     lines = [l.strip().replace("\\", "/") for l in fp]
                     container += lines[:int(len(lines) * self.data_prep.to_process)]
@@ -341,28 +393,25 @@ class DataModule(LightningDataModule):
             mode_name = ["TurnLeft", "TurnRight", "Straight", "Hold"][m]
             log.info(f"  {mode_name}: {mode_freq[m]:.6f} ({global_counter.get(m, 0)}/{total_agents})")
     
-        # Compute class-balanced weights
-        alpha = 1  # You can adjust this hyperparameter
+        # Historical inverse-frequency power weighting.
+        alpha = 0.75
         eps = 1e-6
         mode_freq_tensor = torch.tensor(
             [mode_freq[m] for m in range(NUM_MODES)],
             dtype=torch.float32
         )
-    
         mode_weights = (1.0 / (mode_freq_tensor + eps)) ** alpha
-    
-        # Never-seen modes -> zero weight
+
         never_seen = mode_freq_tensor == 0
         mode_weights[never_seen] = 0.0
-    
-        # Normalize
+
         mean_w = mode_weights.mean()
         if mean_w > 0:
             mode_weights = mode_weights / mean_w
         else:
             log.warning("All mode weights are zero; using uniform weights.")
             mode_weights = torch.ones(NUM_MODES)
-    
+
         self.mode_weights = mode_weights
         log.info(f"Mode weights computed (alpha={alpha}):")
         for m in range(NUM_MODES):
@@ -384,13 +433,19 @@ class DataModule(LightningDataModule):
                 self.data_train.set_split_list(self.split_path["train"])
                 self.data_train.prepare_data()
 
-                self.data_val = deepcopy(self.dataset)
-                self.data_val.set_split_list(self.split_path["val"])
-                self.data_val.prepare_data()
+            self.data_val = deepcopy(self.dataset)
+            self.data_val.set_split_list(self.split_path["val"])
+            self.data_val.prepare_data()
 
             self.data_test = deepcopy(self.dataset)
             self.data_test.set_split_list(self.split_path["test"])
             self.data_test.prepare_data()
+            if self.test_size is not None:
+                n = len(self.data_test)
+                g = torch.Generator().manual_seed(self.fraction_seed)
+                indices = torch.randperm(n, generator=g)[:self.test_size].tolist()
+                self.data_test = Subset(self.data_test, indices)
+                log.info(f"Capped test set to {len(self.data_test)} samples (test_size={self.test_size})")
 
             # -------------------------------
             # Create balanced test set
@@ -461,16 +516,19 @@ class DataModule(LightningDataModule):
     # dataloaders
     # -----------------------------------------------------
     def train_dataloader(self):
-        return DataLoader(
+        nw = self.eparams.num_workers
+        kwargs = dict(
             dataset=self.data_train,
             batch_size=self.eparams.batch_size,
             shuffle=True,
-            num_workers=self.eparams.num_workers,
+            num_workers=nw,
             pin_memory=self.eparams.pin_memory,
             collate_fn=self.dataset.collate_batch,
-            persistent_workers=self.eparams.persistent_workers,
-            prefetch_factor=4
         )
+        if nw > 0:
+            kwargs['persistent_workers'] = self.eparams.persistent_workers
+            kwargs['prefetch_factor'] = 4
+        return DataLoader(**kwargs)
 
     def val_dataloader(self):
         return DataLoader(
@@ -483,13 +541,54 @@ class DataModule(LightningDataModule):
             persistent_workers=self.eparams.persistent_workers
         )
 
-    def test_dataloader(self, balanced=True):
+    def test_dataloader(self):
         """
-        Get test dataloader.
+        Return test dataloaders for comprehensive evaluation.
         
-        Args:
-            balanced: If True, return balanced test set; if False, return original test set
+        Returns:
+            List of dataloaders: [original_test_set, balanced_test_set] (if available)
         """
+        dataloaders = []
+        
+        # 1. Original test set
+        if hasattr(self, 'data_test') and self.data_test is not None:
+            dataloaders.append(
+                DataLoader(
+                    dataset=self.data_test,
+                    batch_size=self.eparams.batch_size,
+                    shuffle=False,
+                    num_workers=self.eparams.num_workers,
+                    pin_memory=self.eparams.pin_memory,
+                    collate_fn=self.dataset.collate_batch,
+                    persistent_workers=self.eparams.persistent_workers
+                )
+            )
+            log.info("Added ORIGINAL test set to test dataloader list")
+        
+        # 2. Balanced test set
+        if self.use_balanced_test and self.data_test_balanced is not None:
+            dataloaders.append(
+                DataLoader(
+                    dataset=self.data_test_balanced,
+                    batch_size=self.eparams.batch_size,
+                    shuffle=False,
+                    num_workers=self.eparams.num_workers,
+                    pin_memory=self.eparams.pin_memory,
+                    collate_fn=self.dataset.collate_batch,
+                    persistent_workers=self.eparams.persistent_workers
+                )
+            )
+            log.info("Added BALANCED test set to test dataloader list")
+        
+        # For backward compatibility: if no balanced set, return single dataloader
+        if len(dataloaders) == 1:
+            return dataloaders[0]
+        
+        return dataloaders
+
+    # Optional: Keep original method for backward compatibility
+    def get_test_dataloader(self, balanced=True):
+        """Legacy method for single test set."""
         if balanced and self.data_test_balanced is not None:
             dataset = self.data_test_balanced
             log.info("Using BALANCED test set")

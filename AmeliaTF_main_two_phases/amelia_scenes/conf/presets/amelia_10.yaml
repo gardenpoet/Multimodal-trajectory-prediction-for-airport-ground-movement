@@ -18,7 +18,7 @@ graph_version: a10v01os
 out_version: null # Set to null to omit versioning for output
 
 # PROCESSING SETTINGS
-parallel: True
+parallel: False
 overwrite: False
 benchmark: False
 xplane: False
@@ -27,7 +27,7 @@ seed: 42
 jobs: -1
 
 # SCENE PROCESSING SETTINGS
-pred_lens: [20, 50]
+pred_lens: [10, 10]
 hist_len: 10
 skip: 1
 min_agents: 2

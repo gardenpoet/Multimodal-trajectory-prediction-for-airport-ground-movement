@@ -23,7 +23,7 @@ def _build_paths(cfg: DictConfig) -> None:
         out_dir = os.path.join(cfg.base_dir, traj_dir,
                                {"scenes": f"proc_scenes",
                                 "metas": f"proc_scenes_metas",
-                                "full": f"proc_full_scenes3"}[cfg.to_process])
+                                "full": f"proc_full_scenes5"}[cfg.to_process])
 
         cfg.out_summary_dir = os.path.join(cfg.base_dir, traj_dir, "proc_scenes_summary")
 
@@ -54,7 +54,6 @@ def _parse_airport(airport, supported_airports=None) -> list:
 def run(cfg: DictConfig) -> None:
     # Load airport
     supported_airports = C.get_available_airports(cfg.base_dir)
-    print(supported_airports)
     airports = _parse_airport(cfg.airport, supported_airports)
 
     # Sanity checks
