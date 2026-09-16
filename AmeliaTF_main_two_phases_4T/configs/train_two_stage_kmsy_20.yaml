@@ -2,15 +2,29 @@
 
 # specify here default configuration
 # order of defaults determines the order in which configs override each other
+#
+# 20s-horizon counterpart to train_two_stage_kmsy.yaml (50s). Supersedes the
+# older ad-hoc configs/train_two_stage_20.yaml, which hardcoded KMSY, composed
+# `paths: default4.yaml` (a file that does not exist in configs/paths/ - that
+# config would fail immediately), and lacked mode_ckpt_path/traj_ckpt_path.
+#
+# Only the `data` and `paths` groups and the checkpoint-path suffixes differ
+# from the 50s config:
+#   - data: kmsy2.yaml -> configs/data/default2.yaml (traj_len=30, hist_len=10,
+#     pred_lens=[10,20] -> 20-step/20s future window at the confirmed 1Hz
+#     sampling rate, see amelia_scenes/utils/dataset.py's
+#     `timedelta(seconds=frame_idx)`).
+#   - paths: default2.yaml -> scenes_dir=.../proc_full_scenes2/, the
+#     preprocessed-scene cache that matches the 20s/traj_len=30 windowing.
 
 defaults:
   - _self_
-  - data: kmsy.yaml
+  - data: kmsy2.yaml
   - model: combined_traj_pred.yaml
   - callbacks: default.yaml
   - logger: wandb.yaml
   - trainer: gpu.yaml
-  - paths: default.yaml
+  - paths: default2.yaml
   - extras: default.yaml
   - hydra: default.yaml
 
@@ -30,9 +44,11 @@ defaults:
 
 ckpt_dir: ${paths.base_dir}/checkpoints
 type: Single-Airport
-ckpt: kmsy2
-mode_ckpt_path: ${ckpt_dir}/${type}/${ckpt}/mode_model/${ckpt}_twophases_50.ckpt
-traj_ckpt_path: ${ckpt_dir}/${type}/${ckpt}/traj_model/${ckpt}_twophases_4_50.ckpt
+# distinct from the 50s config's `ckpt: kmsy2` identifier, to avoid the 20s
+# and 50s checkpoints landing in the same folder
+ckpt: kmsy_20
+mode_ckpt_path: ${ckpt_dir}/${type}/${ckpt}/mode_model/${ckpt}_twophases_20.ckpt
+traj_ckpt_path: ${ckpt_dir}/${type}/${ckpt}/traj_model/${ckpt}_twophases_4_20.ckpt
 
 scratch_joint: False
 e2e_finetune: False
@@ -42,7 +58,7 @@ e2e_epochs: 10
 task_name: "train"
 
 # tags to help you identify your experiments
-tags: ["two_stage", "mode", "trajectory", "teacher_forcing"]
+tags: ["two_stage", "mode", "trajectory", "teacher_forcing", "20s"]
 
 # set False to skip model training
 train: True

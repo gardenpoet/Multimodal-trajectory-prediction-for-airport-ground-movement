@@ -474,7 +474,7 @@ class TrajectoryPredictionModel(LightningModule):
             f"modes_to_use range {modes_to_use.min()}-{modes_to_use.max()} vs num_modes {self.num_modes}"
         
         ego_true = separate_ego_agent(modes_to_use, ego_agent).squeeze(1)
-        sample_weights = self.mode_weights[ego_true]
+        sample_weights = self.mode_weights[ego_true] if self.mode_weights is not None else None
 
         mode_probs_input = F.one_hot(
             modes_to_use, num_classes=self.num_modes).float()

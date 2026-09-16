@@ -296,7 +296,14 @@ class DataModule(LightningDataModule):
         self.use_fraction = getattr(self.eparams.data_prep, "fraction", 1)
         self.fraction_seed = 42
         self.test_size = getattr(self.eparams.data_prep, "test_size", None)
-        
+
+        # Gate for mode-frequency loss weighting (Stage 1 CE weight and Stage 2
+        # per-sample loss weight both consume self.mode_weights below). Default
+        # True preserves historical behavior for any config that doesn't set
+        # this explicitly; the two-phases (non "-W") training grid sets it to
+        # False explicitly in its yaml configs.
+        self.use_mode_weights = getattr(self.eparams.data_prep, "use_mode_weights", True)
+
         # New parameters for balanced test set
         self.use_balanced_test = getattr(self.eparams.data_prep, "use_balanced_test", False)
         self.test_balance_samples = getattr(self.eparams.data_prep, "test_balance_samples", None)
@@ -471,7 +478,14 @@ class DataModule(LightningDataModule):
             if self.task_name == "train":
                 summarize_agent_level_modes(self.data_train, "train (ego-only)")
                 summarize_agent_level_modes(self.data_val, "val (ego-only)")
-                self.mode_frequency(self.data_train)
+                if self.use_mode_weights:
+                    self.mode_frequency(self.data_train)
+                else:
+                    log.info(
+                        "use_mode_weights=False: skipping mode-frequency computation; "
+                        "Stage 1 CE loss and Stage 2 per-sample loss will be unweighted."
+                    )
+                    self.mode_weights = None
 
             # Optional: Balance training set (commented out by default)
             # if self.task_name == "train":

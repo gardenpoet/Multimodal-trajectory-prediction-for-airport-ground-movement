@@ -1,4 +1,10 @@
 # @package _global_
+#
+# DEPRECATED: superseded by configs/train_two_stage_kmsy_20.yaml (paired with
+# amelia_tf/train_two_stage_kmsy_20.py). This file is KMSY-only, hardcoded,
+# and composes `paths: default4.yaml`, which does not exist under
+# configs/paths/ -- running this config as-is fails at Hydra config-compose
+# time. Left in place, unmodified, for reference only; do not submit it.
 
 # specify here default configuration
 # order of defaults determines the order in which configs override each other

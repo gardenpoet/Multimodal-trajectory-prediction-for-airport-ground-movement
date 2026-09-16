@@ -17,6 +17,7 @@ import lightning as L
 import pyrootutils
 import torch
 import json
+import shutil
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 
@@ -205,6 +206,43 @@ class TwoStageTrainer:
 
         self.mode_ckpt_path = Path(trainer.checkpoint_callback.best_model_path)
         log.info(f"Best mode model saved to: {self.mode_ckpt_path}")
+
+        if self.cfg.get("save_model_paths", False):
+            with open(self.output_dir / "mode_model" / "best_model_path.txt", "w") as f:
+                f.write(str(self.mode_ckpt_path))
+
+        # Copy the best checkpoint to the fixed `mode_ckpt_path` location (if
+        # configured) so that other runs (e.g. the 2T/4T sweep for the same
+        # airport+horizon) can reuse it via skip_mode_training=True, instead of
+        # retraining an identical mode classifier from scratch each time.
+        fixed_mode_ckpt = self.cfg.get("mode_ckpt_path", None)
+        if fixed_mode_ckpt:
+            fixed_mode_ckpt = Path(fixed_mode_ckpt)
+            fixed_mode_ckpt.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(self.mode_ckpt_path, fixed_mode_ckpt)
+            log.info(f"Copied best mode checkpoint to fixed reuse path: {fixed_mode_ckpt}")
+
+    def load_pretrained_mode_model(self, checkpoint_path: Path) -> None:
+        """
+        Skip Stage 1 training and reuse an existing mode-model checkpoint.
+
+        Used when sweeping num_futures for Stage 2: the mode classifier does
+        not depend on num_futures, so it only needs to be trained once per
+        airport+horizon (see train_mode_model's fixed-path copy above).
+        """
+        log.info("=" * 70)
+        log.info("Skipping Stage 1 (mode) training - loading existing checkpoint")
+        log.info("=" * 70)
+
+        if not checkpoint_path.exists():
+            raise FileNotFoundError(
+                f"Mode model checkpoint not found: {checkpoint_path}. "
+                "Run a mode-training job first (skip_mode_training=False) "
+                "for this airport+horizon before sweeping num_futures."
+            )
+
+        self.mode_ckpt_path = checkpoint_path
+        log.info(f"Using pretrained mode checkpoint: {self.mode_ckpt_path}")
 
         if self.cfg.get("save_model_paths", False):
             with open(self.output_dir / "mode_model" / "best_model_path.txt", "w") as f:
@@ -463,7 +501,27 @@ class TwoStageTrainer:
         log.info(f"Instantiating datamodule <{self.cfg.data._target_}>")
         datamodule: LightningDataModule = hydra.utils.instantiate(self.cfg.data)
 
-        self.train_mode_model(datamodule)
+        # Stage 1: train mode model, or reuse an existing checkpoint. Mode
+        # classification does not depend on num_futures, so it only needs to
+        # be trained once per airport+horizon; see load_pretrained_mode_model.
+        if self.cfg.get("skip_mode_training", False):
+            mode_ckpt_path = self.cfg.get("mode_ckpt_path", None)
+            if mode_ckpt_path is None:
+                raise ValueError("skip_mode_training=True but mode_ckpt_path is not set")
+            self.load_pretrained_mode_model(Path(mode_ckpt_path))
+        else:
+            self.train_mode_model(datamodule)
+
+        # Mode-only run: stop here so a dedicated "train mode once" job does
+        # not also pay for a full Stage 2 trajectory training.
+        if self.cfg.get("skip_traj_training", False):
+            log.info("skip_traj_training=True: stopping after Stage 1 (mode-only run).")
+            return {
+                "mode_model_path": str(self.mode_ckpt_path) if self.mode_ckpt_path else None,
+                "traj_model_path": None,
+                "test_results": {}
+            }
+
         self.train_trajectory_model(datamodule)
 
         results = {}

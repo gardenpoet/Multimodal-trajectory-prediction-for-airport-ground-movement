@@ -1,6 +1,15 @@
 """
 Two-stage training pipeline for aircraft trajectory prediction.
 
+DEPRECATED: superseded by amelia_tf/train_two_stage_kmsy_20.py (paired with
+configs/train_two_stage_kmsy_20.yaml). Its config_name="train_two_stage_20"
+config composes `paths: default4.yaml`, which does not exist under
+configs/paths/, so this entrypoint fails at config-compose time. Also, its
+Stage 2 conditions on a frozen, loaded Stage-1 mode_net (no teacher forcing) -
+architecturally different from the kbos/klax/kmsy trainers below, which train
+Stage 2 independently with teacher forcing. Left in place, unmodified, for
+reference only; do not submit it.
+
 Stage 1: Train mode prediction model (classification)
 Stage 2: Train trajectory prediction model with teacher forcing (regression)
 Stage 3: Optional end-to-end testing with combined models
@@ -97,7 +106,7 @@ class TwoStageTrainer:
         log.info("Instantiating callbacks...")
         callbacks: List[Callback] = utils.instantiate_callbacks(self.cfg.get("callbacks"))
 
-        # Strip ModelCheckpoint and EarlyStopping from the yaml list —
+        # Strip ModelCheckpoint and EarlyStopping from the yaml list ï¿½
         # they are stage-specific and must be re-added with the correct
         # monitor metric and output directory for each stage.
         callbacks = [

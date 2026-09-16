@@ -5,12 +5,12 @@
 
 defaults:
   - _self_
-  - data: kbos2.yaml  
-  - model: combined_traj_pred.yaml 
+  - data: kbos.yaml
+  - model: combined_traj_pred.yaml
   - callbacks: default.yaml
   - logger: wandb.yaml
-  - trainer: gpu.yaml  
-  - paths: default2.yaml
+  - trainer: gpu.yaml
+  - paths: default.yaml
   - extras: default.yaml
   - hydra: default.yaml
 
@@ -27,10 +27,10 @@ defaults:
 
   # debugging config (enable through command line, e.g. `python train.py debug=default)
   - debug: null
-  
+
 ckpt_dir: ${paths.base_dir}/checkpoints
 type: Single-Airport
-ckpt: kmsy2
+ckpt: kbos2
 mode_ckpt_path: ${ckpt_dir}/${type}/${ckpt}/mode_model/${ckpt}_twophases_50.ckpt
 traj_ckpt_path: ${ckpt_dir}/${type}/${ckpt}/traj_model/${ckpt}_twophases_4_50.ckpt
 
@@ -69,6 +69,15 @@ run_end_to_end_test: True
 
 save_model_paths: True
 
+# Checkpoint-reuse workflow: mode classification does not depend on
+# num_futures, so set skip_mode_training=True (with mode_ckpt_path pointing at
+# an already-trained checkpoint, e.g. from a train_mode_* SLURM job) to skip
+# Stage 1 and go straight to the num_futures sweep in Stage 2.
+skip_mode_training: False
+# set True for a dedicated "train mode once" job: trains Stage 1 only, saves
+# it to mode_ckpt_path, then exits before Stage 2/3.
+skip_traj_training: False
+
 mode:
   epochs: ${mode_epochs}
   patience: ${patience}
@@ -76,3 +85,12 @@ mode:
 trajectory:
   epochs: ${traj_epochs}
   patience: ${patience}
+
+# Two-phases (non "-W") grid: no mode-frequency loss weighting in either
+# stage. See amelia_tf/data/datamodule.py (use_mode_weights gate) and
+# amelia_tf/models/traj_pred_combined.py (both ModePredictionModel and
+# TrajectoryPredictionModel consume the same dm.mode_weights tensor).
+data:
+  extra_params:
+    data_prep:
+      use_mode_weights: false
