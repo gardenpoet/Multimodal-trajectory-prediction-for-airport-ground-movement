@@ -32,6 +32,10 @@ if [ -z "$NUM_FUTURES" ]; then
     exit 1
 fi
 
+# NOTE: the actual candidate-count knob is model.traj_net.config.num_hypotheses,
+# not config.decoder.num_futures (which AmeliaTrajectory.__init__ always
+# overwrites with num_hypotheses before building the GMM head -- see the NOTE
+# in configs/model/combined_traj_pred.yaml).
 python -m amelia_tf.train_two_stage_kbos_20 \
     skip_mode_training=true \
-    model.traj_net.config.decoder.num_futures=${NUM_FUTURES}
+    model.traj_net.config.num_hypotheses=${NUM_FUTURES}

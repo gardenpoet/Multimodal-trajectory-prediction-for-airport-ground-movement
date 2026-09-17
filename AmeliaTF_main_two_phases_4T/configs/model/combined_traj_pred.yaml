@@ -120,10 +120,19 @@ traj_net:
     decoder:
       num_modes: 4
       num_dims: 6
+      # NOTE: AmeliaTrajectory.__init__ (amelia_tf/models/components/amelia_trajectory.py)
+      # unconditionally overwrites this with `num_hypotheses` (below) before building the
+      # GMM decoder head, so this value is never actually used -- it exists only because
+      # the underlying GMM component's own config schema requires the key. Override
+      # `num_hypotheses`, not this, to change the number of trajectory candidates (K).
       num_futures: 1
       hidden_dim: 256
       num_decoder_layers: 4
       dropout: 0.1
+
+    # Number of trajectory candidates (K) per mode -- the actual 1T/2T/4T knob.
+    # CLI override: model.traj_net.config.num_hypotheses=<1|2|4>
+    num_hypotheses: 1
 
 extra_params:
   propagation: marginal
