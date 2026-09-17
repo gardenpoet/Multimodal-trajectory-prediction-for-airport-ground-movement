@@ -1,0 +1,68 @@
+# @package _global_
+#
+# 20s-horizon counterpart of train_stgcnn_kbos.yaml: only `data` and `paths` differ
+# (kbos2.yaml / default2.yaml, both "2"-suffixed for the 20s horizon).
+
+defaults:
+  - data: kbos2.yaml
+  - model: stgcnn.yaml
+  - callbacks: default.yaml
+  - logger: wandb.yaml # set logger here or use command line (e.g. `python train.py logger=tensorboard`)
+  - trainer: gpu.yaml
+  - paths: default2.yaml
+  - extras: default.yaml
+  - hydra: default.yaml
+
+  # experiment configs allow for version control of specific hyperparameters
+  # e.g. best hyperparameters for given model and datamodule
+  - experiment: null
+
+  # config for hyperparameter optimization
+  - hparams_search: null
+
+  # optional local config for machine/user specific settings
+  # it's optional since it doesn't need to exist and is excluded from version control
+  - optional local: default.yaml
+
+  # debugging config (enable through command line, e.g. `python train.py debug=default)
+  - debug: null
+
+  - _self_
+
+# task name, determines output directory path
+task_name: "train"
+
+# tags to help you identify your experiments
+tags: ["stgcnn", "kbos", "20s"]
+
+# set False to skip model training
+train: True
+
+# evaluate on test set, using best model weights achieved during training
+test: True
+
+# compile model for faster training with pytorch 2.0
+compile: False
+
+# simply provide checkpoint path to resume training
+ckpt_path: null
+
+# seed for random number generators in pytorch, numpy and python.random
+seed: 42
+
+# Sec. 4.1: 300 epochs.
+trainer:
+  max_epochs: 300
+
+data:
+  extra_params:
+    # Sec. 4.1: batch size 128 (also the repo-wide default in configs/data/default.yaml).
+    batch_size: 128
+  dataset:
+    config:
+      # The paper's STG-CNN has no map/context encoder, and this baseline doesn't use
+      # the `context`/`adjacency` (map-polyline) fields the dataset can produce for the
+      # other (context-aware) methods -- disable it to skip that unused computation.
+      # This does NOT change which scenes/splits/agents are used, only whether the
+      # (unused) map context tensor is computed. See README.
+      add_context: false

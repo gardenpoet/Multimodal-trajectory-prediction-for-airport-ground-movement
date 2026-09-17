@@ -40,6 +40,15 @@ New:
   `validation_step`/`test_step`, NLL loss, ADE/FDE logging at horizons 20 and 50).
 - `configs/model/stgcnn.yaml`, `configs/train_stgcnn_{kbos,klax,kmsy}.yaml`
 - `amelia_tf/train_stgcnn_{kbos,klax,kmsy}.py`, `train_stgcnn_{kbos,klax,kmsy}.sh`
+- `configs/data/default2.yaml`, `configs/data/{kbos,klax,kmsy}2.yaml`, `configs/paths/default2.yaml`,
+  `configs/train_stgcnn_{kbos,klax,kmsy}_20.yaml`, `amelia_tf/train_stgcnn_{kbos,klax,kmsy}_20.py`,
+  `train_stgcnn_{kbos,klax,kmsy}_20.sh` -- a genuinely separate 20s-horizon training run
+  (`traj_len: 30`, `pred_lens: [10, 20]`, its own `proc_full_scenes2/` scenes dir and
+  `splits2/` split cache), following the same no-suffix-is-50s / `2`-suffix-is-20s
+  convention as `AmeliaTF_main_two_phases_4T`. This is distinct from the `t=20` metric
+  already logged by the 50s-config run above: that is an intermediate-horizon readout
+  from a model trained on 60-frame (10 hist + 50 pred) sequences, not a model trained
+  end-to-end for a 20s prediction task.
 
 ## How to launch training (HPC / SLURM)
 
@@ -48,6 +57,11 @@ cd STGCNN_baseline
 sbatch train_stgcnn_kbos.sh
 sbatch train_stgcnn_klax.sh
 sbatch train_stgcnn_kmsy.sh
+
+# 20s-horizon counterparts (separate training run, see "What was copied vs. what is new"):
+sbatch train_stgcnn_kbos_20.sh
+sbatch train_stgcnn_klax_20.sh
+sbatch train_stgcnn_kmsy_20.sh
 ```
 
 Or directly, e.g. on an interactive GPU node:

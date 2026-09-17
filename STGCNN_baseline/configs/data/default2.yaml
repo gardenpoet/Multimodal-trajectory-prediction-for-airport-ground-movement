@@ -1,0 +1,82 @@
+_target_: amelia_tf.data.datamodule.DataModule
+
+dataset:
+  _target_: amelia_tf.data.components.amelia_dataset.AmeliaDataset
+  config:
+    in_data_dir: ${paths.scenes_dir}
+    context_dir: ${paths.context_dir}
+    assets_dir: ${paths.assets_dir}
+
+    split: null
+
+    # 20s-horizon config (mirrors AmeliaTF_main_two_phases_4T/configs/data/default2.yaml):
+    # shorter trajectory window than the 50s default.yaml (traj_len 60 -> 30).
+    traj_len: 30
+    hist_len: 10
+    pred_lens: [10, 20]
+
+    skip: 1
+    min_agents: 2
+    max_agents: 15
+
+    add_context: true
+    num_polylines: 100
+
+    encode_agent_type: false
+    encode_interp_flag: false
+
+    parallel: true
+    debug: false
+    do_sharding: true
+
+    sampling_strategy: critical
+    supported_sampling_strategies: [random, kinematic, interactive, critical]
+    k_agents: 5
+
+    seed: ${seed}
+
+extra_params:
+  batch_size: 128
+  num_workers: 10
+  pin_memory: true
+  persistent_workers: true
+
+  data_prep:
+    task: ${task_name}
+    traj_data_dir: ${paths.traj_data_dir}
+    in_data_dir: ${paths.in_data_dir}
+    # separate split cache from the 50s config's ./splits, so the two horizons
+    # never read/write each other's cached splits.
+    split_dir_: ${paths.traj_data_dir}/splits2
+    split_dir: ${paths.output_dir}/splits2
+    exp_suffix: all-in_context-${data.dataset.config.add_context}
+
+    seen_airports: [kbos, kdca, kewr, kjfk, klax, kmdw, kmsy, ksea, ksfo, panc]
+    unseen_airports: []
+
+    to_process: 1.0
+    seed: ${seed}
+
+    split_type: day
+    day_splits:
+      train_val: [0.8, 0.2]
+      train_val_perc: 0.75
+      unseen_perc: 0.25
+
+    # for split_type: month
+    month_splits:
+      train_val: [0.8, 0.2]
+      train_val_perc: 0.75
+      unseen_perc: 0.25
+
+    # for split_type: random
+    random_splits:
+      train_val_test: [0.7, 0.1, 0.2]
+      unseen_perc: 0.25
+
+  task_name: ${task_name}
+  task_names: [train, eval]
+
+
+  supported_splits: [random, month, day]
+  supported_airports: [kbos, kdca, kewr, kjfk, klax, kmdw, kmsy, ksea, ksfo, panc]

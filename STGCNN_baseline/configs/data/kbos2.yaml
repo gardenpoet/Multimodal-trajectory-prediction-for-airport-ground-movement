@@ -1,0 +1,9 @@
+defaults:
+  - default2.yaml
+
+extra_params:
+  data_prep:
+    exp_suffix: kbos_context-${data.dataset.config.add_context}
+    seen_airports: [kbos]
+
+    task: kbos
