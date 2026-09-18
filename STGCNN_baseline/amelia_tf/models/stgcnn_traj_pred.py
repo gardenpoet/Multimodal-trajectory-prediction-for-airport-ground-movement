@@ -27,6 +27,7 @@ from amelia_tf.models.components.stgcnn import STGCNN, build_adjacency
 from amelia_tf.models.components.txpcnn import TXPCNN
 from amelia_tf.utils.utils import separate_ego_agent
 from amelia_tf.utils.metrics import marginal_ade, marginal_fde
+from amelia_tf.utils.modes import TURN_MODES_NAMES, VALID_TURN_MODES
 
 
 def diagonal_gaussian_nll(
@@ -133,9 +134,22 @@ class STGCNNTrajPred(LightningModule):
     """ Lightning wrapper for the STG-CNN + TXP-CNN baseline. Mirrors the metric-naming
     conventions of `AmeliaTF_main/amelia_tf/models/trajpred.py` (`val/ade/t=..`,
     `test/ade/t=..`, `losses/train`, etc.) so W&B logs are structurally comparable
-    across methods, but reports only the unimodal "All" ADE/FDE/NLL (no per-mode
-    breakdown, no ego/joint propagation choice, no off-road/modal-classification
-    metrics -- those are specific to the project's mode-conditioned methods). """
+    across methods, but this model itself is unimodal (single bivariate Gaussian
+    per agent per future timestep, no turn-mode classification, no ego/joint
+    propagation choice, no off-road/modal-classification metrics -- those are
+    specific to the project's mode-conditioned methods). RMSE is sqrt(mean squared
+    L2 error) over the full prediction horizon, matching AmeliaTF_main's
+    compute_mode_rmse formula but with no mode-argmax step since there is only ever
+    one (unimodal) trajectory to begin with.
+
+    At test time only, ADE/FDE/NLL/RMSE are additionally broken down by the
+    ground-truth kinematic turn-mode label (Hold/Straight/TurnLeft/TurnRight)
+    already stored alongside each trajectory (`rule_based_encoding`, see
+    amelia_tf/data/components/amelia_dataset.py). That label is a property of the
+    trajectory data itself, computed independently of any model, so it can be used
+    to slice this unimodal model's predictions even though the model has no notion
+    of mode -- unlike the aggregate ("All") metrics, which are logged during both
+    validation and testing, this per-mode breakdown is test-only. """
 
     def __init__(self, optimizer: EasyDict, net: nn.Module, extra_params: EasyDict):
         super().__init__()
@@ -150,6 +164,7 @@ class STGCNNTrajPred(LightningModule):
 
         self.train_loss, self.val_loss, self.test_loss = MeanMetric(), MeanMetric(), MeanMetric()
         self.val_nll, self.test_nll = MeanMetric(), MeanMetric()
+        self.val_rmse, self.test_rmse = MeanMetric(), MeanMetric()
 
         self.val_ade, self.val_fde = {}, {}
         self.test_ade, self.test_fde = {}, {}
@@ -163,6 +178,26 @@ class STGCNNTrajPred(LightningModule):
         self.val_fde = nn.ModuleDict(self.val_fde)
         self.test_ade = nn.ModuleDict(self.test_ade)
         self.test_fde = nn.ModuleDict(self.test_fde)
+
+        # Per-mode (test-only) breakdown, sliced by the ground-truth kinematic
+        # turn-mode label already present in the dataset (`rule_based_encoding`,
+        # see amelia_tf/data/components/amelia_dataset.py) -- this label is a
+        # property of the trajectory data itself, independent of this (unimodal)
+        # model's own predictions, so per-mode metrics can still be reported even
+        # though the model does not classify a mode. Full horizon (t=max) only,
+        # to match how RMSE/NLL are reported (no per-t breakdown).
+        self.test_mode_ade, self.test_mode_fde = {}, {}
+        self.test_mode_nll, self.test_mode_rmse = {}, {}
+        for mode_idx in VALID_TURN_MODES:
+            mode_name = TURN_MODES_NAMES[mode_idx]
+            self.test_mode_ade[mode_name] = MeanMetric()
+            self.test_mode_fde[mode_name] = MeanMetric()
+            self.test_mode_nll[mode_name] = MeanMetric()
+            self.test_mode_rmse[mode_name] = MeanMetric()
+        self.test_mode_ade = nn.ModuleDict(self.test_mode_ade)
+        self.test_mode_fde = nn.ModuleDict(self.test_mode_fde)
+        self.test_mode_nll = nn.ModuleDict(self.test_mode_nll)
+        self.test_mode_rmse = nn.ModuleDict(self.test_mode_rmse)
 
     def model_step(self, batch: Any):
         seq = batch['scene_dict']['rel_sequences']            # (B, A, T, 7)
@@ -229,6 +264,14 @@ class STGCNNTrajPred(LightningModule):
         self.val_nll(nll.mean())
         self.log("val/nll", self.val_nll, on_step=False, on_epoch=True, prog_bar=True)
 
+        # RMSE over the full prediction horizon: sqrt(mean squared L2 error).
+        # No mode-argmax needed (unimodal: ego_mu already squeezed to one trajectory).
+        error_sq = (ego_mu.squeeze(3) - ego_Y).norm(dim=-1).pow(2)  # (B,1,Tp)
+        error_sq = (error_sq * ego_mask).sum(dim=-1) / ego_mask.sum(dim=-1).clamp_min(1)
+        rmse = 1000.0 * torch.sqrt(error_sq)
+        self.val_rmse(rmse.mean())
+        self.log("val/rmse", self.val_rmse, on_step=False, on_epoch=True, prog_bar=True)
+
     def test_step(self, batch: Any, batch_idx: int):
         loss, mu, sigma, Y, mask_f = self.model_step(batch)
         ego_mu, ego_sigma, ego_Y, ego_mask = self._ego_slices(
@@ -254,6 +297,56 @@ class STGCNNTrajPred(LightningModule):
         nll = (nll * ego_mask).sum(dim=-1) / ego_mask.sum(dim=-1).clamp_min(1)
         self.test_nll(nll.mean())
         self.log("test/nll", self.test_nll, on_step=False, on_epoch=True, prog_bar=True)
+
+        # RMSE over the full prediction horizon: sqrt(mean squared L2 error).
+        # No mode-argmax needed (unimodal: ego_mu already squeezed to one trajectory).
+        error_sq = (ego_mu.squeeze(3) - ego_Y).norm(dim=-1).pow(2)  # (B,1,Tp)
+        error_sq = (error_sq * ego_mask).sum(dim=-1) / ego_mask.sum(dim=-1).clamp_min(1)
+        rmse = 1000.0 * torch.sqrt(error_sq)
+        self.test_rmse(rmse.mean())
+        self.log("test/rmse", self.test_rmse, on_step=False, on_epoch=True, prog_bar=True)
+
+        # Per-mode breakdown using the ground-truth kinematic turn-mode label
+        # already stored alongside the trajectory (rule_based_encoding); this
+        # model does not predict a mode, but the label is a property of the
+        # data, not of the model, so slicing by it is still meaningful.
+        rule_based_encoding = batch['scene_dict'].get('rule_based_encoding')
+        if rule_based_encoding is not None:
+            ego_agent_test = batch['scene_dict']['ego_agent_id_test']
+            true_mode_idx = rule_based_encoding[..., :4].float().argmax(dim=-1)  # (B, A)
+            true_mode_ego = separate_ego_agent(true_mode_idx, ego_agent_test)     # (B, 1)
+            true_mode_flat = true_mode_ego.squeeze(1)                            # (B,)
+
+            for mode_idx in VALID_TURN_MODES:
+                mode_name = TURN_MODES_NAMES[mode_idx]
+                sample_mask = (true_mode_flat == mode_idx)
+                if sample_mask.sum() == 0:
+                    continue
+                mu_m = ego_mu[sample_mask]
+                sig_m = ego_sigma[sample_mask]
+                Y_m = ego_Y[sample_mask]
+                mask_m = ego_mask[sample_mask]
+
+                self.test_mode_ade[mode_name](marginal_ade(mu_m, Y_m, mask=mask_m))
+                self.log(f"test/mode_ade/{mode_name}", self.test_mode_ade[mode_name],
+                          on_step=False, on_epoch=True)
+
+                self.test_mode_fde[mode_name](marginal_fde(mu_m, Y_m, mask=mask_m))
+                self.log(f"test/mode_fde/{mode_name}", self.test_mode_fde[mode_name],
+                          on_step=False, on_epoch=True)
+
+                nll_m = diagonal_gaussian_nll(mu_m.squeeze(3), sig_m.squeeze(3), Y_m)
+                nll_m = (nll_m * mask_m).sum(dim=-1) / mask_m.sum(dim=-1).clamp_min(1)
+                self.test_mode_nll[mode_name](nll_m.mean())
+                self.log(f"test/mode_nll/{mode_name}", self.test_mode_nll[mode_name],
+                          on_step=False, on_epoch=True)
+
+                error_sq_m = (mu_m.squeeze(3) - Y_m).norm(dim=-1).pow(2)
+                error_sq_m = (error_sq_m * mask_m).sum(dim=-1) / mask_m.sum(dim=-1).clamp_min(1)
+                rmse_m = 1000.0 * torch.sqrt(error_sq_m)
+                self.test_mode_rmse[mode_name](rmse_m.mean())
+                self.log(f"test/mode_rmse/{mode_name}", self.test_mode_rmse[mode_name],
+                          on_step=False, on_epoch=True)
 
     def configure_optimizers(self):
         # Paper (Sec. 4.1): plain SGD, lr=0.02. No scheduler is reported, so none is used.

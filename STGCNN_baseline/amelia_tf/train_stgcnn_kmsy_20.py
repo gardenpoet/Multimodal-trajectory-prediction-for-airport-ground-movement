@@ -100,7 +100,14 @@ def train(cfg: DictConfig) -> Tuple[dict, dict]:
     if cfg.get("test"):
         log.info("Starting testing!")
         ckpt_path = trainer.checkpoint_callback.best_model_path
-        if ckpt_path == "":
+        if ckpt_path == "" and cfg.get("ckpt_path"):
+            # Eval-only mode (train=false): this run's own checkpoint callback is
+            # empty since fit() was never called -- reuse an existing checkpoint
+            # from a prior training run instead, so metrics added after that run
+            # finished (e.g. RMSE) can be recomputed without retraining.
+            ckpt_path = cfg.get("ckpt_path")
+            log.info(f"train=false: evaluating existing checkpoint at {ckpt_path}")
+        elif ckpt_path == "":
             log.warning("Best ckpt not found! Using current weights for testing...")
             ckpt_path = None
         trainer.test(model=model, datamodule=datamodule, ckpt_path=ckpt_path)

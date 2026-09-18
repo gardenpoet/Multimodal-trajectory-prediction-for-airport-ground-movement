@@ -12,8 +12,31 @@ normalization as this repo's other `AmeliaTF_main`-family methods -- only the mo
 (STG-CNN + TXP-CNN) and its training loop are new.
 
 This is a **unimodal** baseline: a single bivariate Gaussian per agent per future
-timestep, no turn-mode classification. Only an aggregate "All" ADE/FDE/NLL is reported
-(no per-mode Hold/Straight/TurnLeft/TurnRight breakdown).
+timestep, no turn-mode classification. The aggregate "All" ADE/FDE/NLL/RMSE is
+reported for both validation and testing; at test time only, ADE/FDE/NLL/RMSE are
+additionally broken down by ground-truth turn mode (Hold/Straight/TurnLeft/
+TurnRight) using the `rule_based_encoding` label already stored alongside each
+trajectory in the dataset -- a property of the data, not of this (mode-agnostic)
+model, so it can still be used to slice its predictions for comparison against the
+project's mode-conditioned methods. RMSE and the per-mode breakdown were both added
+after the initial 6 runs (KMSY/KBOS/KLAX x 20s/50s) had already completed without
+them.
+
+No need to retrain from scratch to pick these up -- each `train_stgcnn_*.py` now
+supports an eval-only mode that reloads an existing checkpoint and just reruns
+`trainer.test()` (a few minutes, not up to 120h):
+
+```bash
+# Find each run's best checkpoint path: every original run already printed it,
+# e.g. grep "Best ckpt path:" stgcnn_kmsy.out (or the *_20.out variant).
+python -m amelia_tf.train_stgcnn_kmsy train=false 'ckpt_path="/path/to/epoch_XXX.ckpt"'
+```
+
+Repeat for `kbos`/`klax` and the `_20` variants with each run's own checkpoint path.
+This still needs a GPU node (the model has to be loaded and run a forward pass over
+the test set), so submit it via the existing `train_stgcnn_*.sh` scripts with the
+python invocation line replaced accordingly, or run interactively if your cluster
+allows short interactive GPU sessions.
 
 ## What was copied vs. what is new
 
