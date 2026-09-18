@@ -1,14 +1,14 @@
 #!/bin/bash
-#SBATCH --job-name=stgcnn_train
-#SBATCH --output=stgcnn_kbos.out
-#SBATCH --error=stgcnn_kbos.err
+#SBATCH --job-name=stgcnn_eval
+#SBATCH --output=stgcnn_kbos_eval.out
+#SBATCH --error=stgcnn_kbos_eval.err
 
-#SBATCH --partition=sae
-#SBATCH --account=pilot_sae_gpu
+#SBATCH --partition=andrena
+#SBATCH --account=pilot_andrena
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=60G
-#SBATCH --time=120:00:00
+#SBATCH --time=01:00:00
 
 cd $SLURM_SUBMIT_DIR
 
@@ -19,4 +19,8 @@ module load cuda/12.2.2-gcc-12.2.0
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export HYDRA_FULL_ERROR=1
 
-python -m amelia_tf.train_stgcnn_kbos
+# Eval-only rerun to pick up RMSE + per-mode metrics added after this run's
+# original training completed. Checkpoint path from this run's own original
+# log: grep "Best ckpt path:" stgcnn_kbos.out
+python -m amelia_tf.train_stgcnn_kbos train=false \
+    'ckpt_path="/gpfs/scratch/exy064/ljx/Risk-Assessment/STGCNN_baseline/out/logs/train/runs/2026-09-17_18-23-16/checkpoints/epoch_185.ckpt"'
