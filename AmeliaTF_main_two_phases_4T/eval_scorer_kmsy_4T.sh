@@ -10,8 +10,13 @@
 # both explicit even though they match the GMM defaults in gmm.py, so this
 # script itself is now the record of what was used.
 #
+# mode_ckpt_path is overridden to the mode model trained most recently
+# (kmsy2_twophases_50.ckpt, per train_two_stage_kmsy.yaml's mode_ckpt_path
+# naming, i.e. no hypothesis-count segment), rather than the older
+# kmsy2_twophases_4_50.ckpt that configs/eval_two_stage.yaml defaults to.
+#
 # Requires the checkpoints already on disk at:
-#   ${ckpt_dir}/Single-Airport/kmsy2/mode_model/kmsy2_twophases_4_50.ckpt
+#   ${ckpt_dir}/Single-Airport/kmsy2/mode_model/kmsy2_twophases_50.ckpt
 #   ${ckpt_dir}/Single-Airport/kmsy2/traj_model/kmsy2_twophases_4_50.ckpt
 # (ckpt=kmsy2, matching configs/train_two_stage_kmsy.yaml's traj_ckpt_path)
 
@@ -41,6 +46,7 @@ export CUBLAS_WORKSPACE_CONFIG=:4096:8
 python -m amelia_tf.eval_two_stage \
     ckpt=kmsy2 \
     data=kmsy.yaml \
+    mode_ckpt_path='${ckpt_dir}/${type}/${ckpt}/mode_model/${ckpt}_twophases_50.ckpt' \
     model.traj_net.config.num_hypotheses=4 \
     model.traj_net.config.enable_score_head=true \
     model.traj_net.config.score_mode=5 \
