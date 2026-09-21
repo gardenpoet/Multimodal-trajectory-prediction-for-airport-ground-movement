@@ -15,11 +15,17 @@
 # naming, i.e. no hypothesis-count segment), rather than the older
 # kmsy2_twophases_4_50.ckpt that configs/eval_two_stage.yaml defaults to.
 #
-# enable_score_head/score_mode/score_head_type need the Hydra "+" prefix:
-# they aren't declared in configs/model/combined_traj_pred.yaml (only read
-# via getattr(config, ..., default) in amelia_tf/models/components/gmm.py),
-# so Hydra's struct mode rejects a plain override (job 27758086 failed on
-# exactly this before the "+" was added).
+# enable_score_head/score_mode/score_head_type need the Hydra "+" prefix
+# (job 27758086 failed on this before the "+" was added) AND must be nested
+# under .decoder: AmeliaTrajectory.__init__ (amelia_trajectory.py) does
+# self.decoder_config = config.decoder; self.decoder_head = GMM(self.decoder_config),
+# so the GMM instance only ever sees config.decoder, never the top-level
+# config -- setting them as siblings of decoder (job 27805912) leaves the
+# GMM's own enable_score_head at its getattr(..., False) default and fails
+# the "Set enable_score_head=true..." assertion in eval_two_stage.py.
+# num_hypotheses is the one exception: AmeliaTrajectory reads that at the
+# top level (config.num_hypotheses, not config.decoder.num_hypotheses), so
+# it is NOT nested under decoder below.
 #
 # scorer.score_head_save is overridden to a "_hard" filename: _score_step in
 # eval_two_stage.py now trains with soft_tau=0 (hard label), since a prior
@@ -60,8 +66,8 @@ python -m amelia_tf.eval_two_stage \
     data=kmsy.yaml \
     mode_ckpt_path='${ckpt_dir}/${type}/${ckpt}/mode_model/${ckpt}_twophases_50.ckpt' \
     model.traj_net.config.num_hypotheses=4 \
-    +model.traj_net.config.enable_score_head=true \
-    +model.traj_net.config.score_mode=5 \
-    +model.traj_net.config.score_head_type=attention \
+    +model.traj_net.config.decoder.enable_score_head=true \
+    +model.traj_net.config.decoder.score_mode=5 \
+    +model.traj_net.config.decoder.score_head_type=attention \
     scorer.stage=score \
     scorer.score_head_save='/gpfs/scratch/exy064/ljx/Risk-Assessment/AmeliaTF_main_two_phases_4T/out/${ckpt}/per_mode_scorer_hard.pt'
