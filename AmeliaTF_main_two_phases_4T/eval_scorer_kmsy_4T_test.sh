@@ -19,6 +19,11 @@
 #   /gpfs/scratch/exy064/ljx/Risk-Assessment/AmeliaTF_main_two_phases_4T/out/kmsy2/per_mode_scorer_hard.pt
 # (only valid once eval_scorer_kmsy_4T.sh has actually finished training and
 # saved that file -- check for it before submitting this script).
+#
+# scorer.score_head_load needs the Hydra "+" prefix (job 27832482 failed on
+# this): configs/eval_two_stage.yaml only declares scorer.score_head_save,
+# never score_head_load, even though eval_two_stage.py's cfg.scorer.get(
+# "score_head_load", ...) call handles it being absent just fine.
 
 #SBATCH --job-name=amelia_eval_scorer_4T_test
 #SBATCH --output=eval_scorer_kmsy_4T_test_%j.out
@@ -52,4 +57,4 @@ python -m amelia_tf.eval_two_stage \
     +model.traj_net.config.decoder.score_mode=5 \
     +model.traj_net.config.decoder.score_head_type=attention \
     scorer.stage=score_test \
-    scorer.score_head_load='/gpfs/scratch/exy064/ljx/Risk-Assessment/AmeliaTF_main_two_phases_4T/out/${ckpt}/per_mode_scorer_hard.pt'
+    +scorer.score_head_load='/gpfs/scratch/exy064/ljx/Risk-Assessment/AmeliaTF_main_two_phases_4T/out/${ckpt}/per_mode_scorer_hard.pt'
