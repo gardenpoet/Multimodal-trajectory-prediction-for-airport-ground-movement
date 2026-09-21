@@ -15,6 +15,12 @@
 # naming, i.e. no hypothesis-count segment), rather than the older
 # kmsy2_twophases_4_50.ckpt that configs/eval_two_stage.yaml defaults to.
 #
+# enable_score_head/score_mode/score_head_type need the Hydra "+" prefix:
+# they aren't declared in configs/model/combined_traj_pred.yaml (only read
+# via getattr(config, ..., default) in amelia_tf/models/components/gmm.py),
+# so Hydra's struct mode rejects a plain override (job 27758086 failed on
+# exactly this before the "+" was added).
+#
 # Requires the checkpoints already on disk at:
 #   ${ckpt_dir}/Single-Airport/kmsy2/mode_model/kmsy2_twophases_50.ckpt
 #   ${ckpt_dir}/Single-Airport/kmsy2/traj_model/kmsy2_twophases_4_50.ckpt
@@ -48,7 +54,7 @@ python -m amelia_tf.eval_two_stage \
     data=kmsy.yaml \
     mode_ckpt_path='${ckpt_dir}/${type}/${ckpt}/mode_model/${ckpt}_twophases_50.ckpt' \
     model.traj_net.config.num_hypotheses=4 \
-    model.traj_net.config.enable_score_head=true \
-    model.traj_net.config.score_mode=5 \
-    model.traj_net.config.score_head_type=attention \
+    +model.traj_net.config.enable_score_head=true \
+    +model.traj_net.config.score_mode=5 \
+    +model.traj_net.config.score_head_type=attention \
     scorer.stage=score

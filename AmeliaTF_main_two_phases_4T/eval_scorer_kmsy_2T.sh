@@ -18,6 +18,12 @@
 # overridden so this run's output does not collide with (overwrite) the 4T
 # scorer's.
 #
+# enable_score_head/score_mode/score_head_type need the Hydra "+" prefix:
+# they aren't declared in configs/model/combined_traj_pred.yaml (only read
+# via getattr(config, ..., default) in amelia_tf/models/components/gmm.py),
+# so Hydra's struct mode rejects a plain override (see eval_scorer_kmsy_4T.sh's
+# job 27758086 failure for the exact error).
+#
 # Requires the checkpoints already on disk at:
 #   ${ckpt_dir}/Single-Airport/kmsy2/mode_model/kmsy2_twophases_50.ckpt
 #   ${ckpt_dir}/Single-Airport/kmsy2/traj_model/kmsy2_twophases_2_50.ckpt
@@ -53,8 +59,8 @@ python -m amelia_tf.eval_two_stage \
     mode_ckpt_path='${ckpt_dir}/${type}/${ckpt}/mode_model/${ckpt}_twophases_50.ckpt' \
     traj_ckpt_path='${ckpt_dir}/${type}/${ckpt}/traj_model/${ckpt}_twophases_2_50.ckpt' \
     model.traj_net.config.num_hypotheses=2 \
-    model.traj_net.config.enable_score_head=true \
-    model.traj_net.config.score_mode=5 \
-    model.traj_net.config.score_head_type=attention \
+    +model.traj_net.config.enable_score_head=true \
+    +model.traj_net.config.score_mode=5 \
+    +model.traj_net.config.score_head_type=attention \
     scorer.stage=score \
     scorer.score_head_save='/gpfs/scratch/exy064/ljx/Risk-Assessment/AmeliaTF_main_two_phases_4T/out/${ckpt}/per_mode_scorer_soft_2T.pt'
