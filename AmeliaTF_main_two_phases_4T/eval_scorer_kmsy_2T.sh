@@ -63,4 +63,4 @@ python -m amelia_tf.eval_two_stage \
     +model.traj_net.config.score_mode=5 \
     +model.traj_net.config.score_head_type=attention \
     scorer.stage=score \
-    scorer.score_head_save='/gpfs/scratch/exy064/ljx/Risk-Assessment/AmeliaTF_main_two_phases_4T/out/${ckpt}/per_mode_scorer_soft_2T.pt'
+    scorer.score_head_save='/gpfs/scratch/exy064/ljx/Risk-Assessment/AmeliaTF_main_two_phases_4T/out/${ckpt}/per_mode_scorer_hard_2T.pt'

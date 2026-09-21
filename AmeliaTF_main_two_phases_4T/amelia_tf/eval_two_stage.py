@@ -255,7 +255,7 @@ def _score_step(batch, traj_net, mode_net, hist_len, num_modes, train, opt, rout
 
         s_m = s[sel]
         winner_m = winner[sel]
-        soft_tau = 0.5   # 0 = hard label; >0 = soft
+        soft_tau = 0   # 0 = hard label; >0 = soft (hard performed better in prior comparison)
         if soft_tau > 0:
             with torch.no_grad():
                 ade_m = ade_k[sel]                                       # (n,K)

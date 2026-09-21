@@ -21,6 +21,12 @@
 # so Hydra's struct mode rejects a plain override (job 27758086 failed on
 # exactly this before the "+" was added).
 #
+# scorer.score_head_save is overridden to a "_hard" filename: _score_step in
+# eval_two_stage.py now trains with soft_tau=0 (hard label), since a prior
+# comparison found hard label outperforms the soft label loss, but the
+# default score_head_save in configs/eval_two_stage.yaml is still named
+# "per_mode_scorer_soft.pt" from when soft_tau=0.5 was the default.
+#
 # Requires the checkpoints already on disk at:
 #   ${ckpt_dir}/Single-Airport/kmsy2/mode_model/kmsy2_twophases_50.ckpt
 #   ${ckpt_dir}/Single-Airport/kmsy2/traj_model/kmsy2_twophases_4_50.ckpt
@@ -57,4 +63,5 @@ python -m amelia_tf.eval_two_stage \
     +model.traj_net.config.enable_score_head=true \
     +model.traj_net.config.score_mode=5 \
     +model.traj_net.config.score_head_type=attention \
-    scorer.stage=score
+    scorer.stage=score \
+    scorer.score_head_save='/gpfs/scratch/exy064/ljx/Risk-Assessment/AmeliaTF_main_two_phases_4T/out/${ckpt}/per_mode_scorer_hard.pt'
