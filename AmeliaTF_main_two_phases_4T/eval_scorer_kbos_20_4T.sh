@@ -11,7 +11,13 @@
 # base eval_two_stage.yaml's defaults are hardcoded to a "_50" suffix), and
 # why paths=default2.yaml is also required (job 27892446 failed without it
 # on the KMSY 2T variant of this script -- wrong scenes_dir gives
-# 60-length scenes instead of the 20s-horizon's 30-length ones).
+# 60-length scenes instead of the 20s-horizon's 30-length ones), and why
+# +model.traj_net.config.decoder.pred_len=20 is also required (job
+# 27959063 failed without it, on the KLAX 2T variant, but affects all
+# three airports): gmm.py's attention score head reads
+# config.decoder.pred_len to size its "full" key encoder at init time,
+# defaulting to 50 (coincidentally correct for the 50s scripts) unless
+# explicitly overridden here.
 #
 # enable_score_head/score_mode/score_head_type need the Hydra "+" prefix AND
 # must be nested under .decoder (see score_head_config_nesting.md / jobs
@@ -56,5 +62,6 @@ python -m amelia_tf.eval_two_stage \
     +model.traj_net.config.decoder.enable_score_head=true \
     +model.traj_net.config.decoder.score_mode=5 \
     +model.traj_net.config.decoder.score_head_type=attention \
+    +model.traj_net.config.decoder.pred_len=20 \
     scorer.stage=score \
     scorer.score_head_save='/gpfs/scratch/exy064/ljx/Risk-Assessment/AmeliaTF_main_two_phases_4T/out/${ckpt}/per_mode_scorer_hard.pt'
