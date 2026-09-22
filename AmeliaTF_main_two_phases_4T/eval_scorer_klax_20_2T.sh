@@ -14,6 +14,17 @@
 # (unlike the 50s 4T script, which could rely on the base default by
 # coincidence) -- there is no default that is correct for this horizon.
 #
+# paths=default2.yaml is ALSO required (job 27892446 failed without it on
+# the KMSY variant of this script): the base eval_two_stage.yaml defaults
+# to paths=default.yaml, whose scenes_dir points at the 50s preprocessed
+# scenes (proc_full_scenes/, 60-length windows). data=klax2.yaml alone
+# correctly sets traj_len=30 in the model config (so encoder_config.
+# T_size=30), but without also overriding paths, the datamodule still
+# loads the wrong (60-length) scene files from disk, so the model errors
+# with "Sequence length 60 exceeds maximum block size 30" -- paths=
+# default2.yaml points scenes_dir at proc_full_scenes2/, the actual
+# 20s-horizon preprocessed data.
+#
 # enable_score_head/score_mode/score_head_type need the Hydra "+" prefix AND
 # must be nested under .decoder (see score_head_config_nesting.md / jobs
 # 27758086, 27805912 for the two distinct KMSY 50s failures this fixes).
@@ -50,6 +61,7 @@ export CUBLAS_WORKSPACE_CONFIG=:4096:8
 python -m amelia_tf.eval_two_stage \
     ckpt=klax_20 \
     data=klax2.yaml \
+    paths=default2.yaml \
     mode_ckpt_path='${ckpt_dir}/${type}/${ckpt}/mode_model/${ckpt}_twophases_20.ckpt' \
     traj_ckpt_path='${ckpt_dir}/${type}/${ckpt}/traj_model/${ckpt}_twophases_2_20.ckpt' \
     model.traj_net.config.num_hypotheses=2 \

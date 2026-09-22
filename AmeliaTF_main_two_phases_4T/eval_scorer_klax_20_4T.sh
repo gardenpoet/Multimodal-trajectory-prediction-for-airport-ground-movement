@@ -8,7 +8,10 @@
 # Mirrors eval_scorer_klax_20_2T.sh, but points at the 4T trajectory
 # checkpoint. See that script's header comment for why both mode_ckpt_path
 # and traj_ckpt_path must be explicitly overridden for this horizon (the
-# base eval_two_stage.yaml's defaults are hardcoded to a "_50" suffix).
+# base eval_two_stage.yaml's defaults are hardcoded to a "_50" suffix), and
+# why paths=default2.yaml is also required (job 27892446 failed without it
+# on the KMSY 2T variant of this script -- wrong scenes_dir gives
+# 60-length scenes instead of the 20s-horizon's 30-length ones).
 #
 # enable_score_head/score_mode/score_head_type need the Hydra "+" prefix AND
 # must be nested under .decoder (see score_head_config_nesting.md / jobs
@@ -46,6 +49,7 @@ export CUBLAS_WORKSPACE_CONFIG=:4096:8
 python -m amelia_tf.eval_two_stage \
     ckpt=klax_20 \
     data=klax2.yaml \
+    paths=default2.yaml \
     mode_ckpt_path='${ckpt_dir}/${type}/${ckpt}/mode_model/${ckpt}_twophases_20.ckpt' \
     traj_ckpt_path='${ckpt_dir}/${type}/${ckpt}/traj_model/${ckpt}_twophases_4_20.ckpt' \
     model.traj_net.config.num_hypotheses=4 \
