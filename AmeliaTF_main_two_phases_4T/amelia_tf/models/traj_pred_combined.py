@@ -2042,6 +2042,15 @@ class CombinedTrajPredSystem(LightningModule):
         # -----------------------------------------------------------------------
         prefix = "test"
         selected_k_idx = None
+        # Per-(mode, candidate) probability from the scorer's own softmaxed
+        # score, set below and used later to compute NLL over the model's
+        # REAL full predictive distribution (mode-prob x within-mode
+        # candidate-prob) instead of the hard-argmax-selected single
+        # candidate used for ADE/FDE-style metrics. Stays None for any
+        # other selection_mode (no candidate-level probability exists
+        # there), which keeps NLL on the single-candidate-per-mode
+        # behaviour for those paths.
+        scorer_cand_probs = None
 
         sel_mode = getattr(self.eparams, 'selection_mode', 'score')
         if sel_mode == 'score' and traj_score is not None:
@@ -2057,6 +2066,10 @@ class CombinedTrajPredSystem(LightningModule):
             denom = m_exp.sum(dim=1).clamp_min(1)                  # (B,1,1)
             s_pt = ego_score[:, 0, self.hist_len:]                 # (B,Tp,M,K)
             score_fut = (s_pt * m_exp).sum(dim=1) / denom          # (B,M,K)
+            # Genuine per-candidate probability within each mode, for the
+            # full-distribution NLL (see scorer_cand_probs above) -- NOT
+            # used for hypothesis selection itself, which stays hard-argmax.
+            scorer_cand_probs = torch.softmax(score_fut, dim=-1)  # (B,M,K)
             selected_k_idx = score_fut.argmax(-1)  # (B,M)
             B_, _, T_, M_, K_, D_ = ego_mu.shape
             idx = selected_k_idx[:, None, None, :, None, None].expand(
@@ -2450,6 +2463,34 @@ class CombinedTrajPredSystem(LightningModule):
 
         # Store the full K for plotting (before we overwrite ego_mu)
         ego_mu_full = ego_mu.clone()
+        ego_sigma_full = ego_sigma.clone()
+
+        def _full_dist_nll(sample_mask=None):
+            """
+            NLL over the model's real, uncollapsed (mode x candidate)
+            mixture -- mode probability from the intent classifier times
+            within-mode candidate probability from the scorer's own
+            softmaxed score (scorer_cand_probs). Both are genuinely
+            available at deployment (no ground-truth peeking), unlike
+            oracle selection, so this is a fair comparison against
+            Amelia's own NLL, which likewise mixes over its full,
+            uncollapsed candidate set rather than a single hard pick.
+            Only called when scorer_cand_probs is not None; the caller
+            falls back to the ordinary compute_nll call (on the already
+            hard-selected ego_mu/ego_sigma) otherwise.
+            """
+            mu_f    = ego_mu_full    if sample_mask is None else ego_mu_full[sample_mask]
+            sig_f   = ego_sigma_full if sample_mask is None else ego_sigma_full[sample_mask]
+            probs_f = ego_probs      if sample_mask is None else ego_probs[sample_mask]
+            cand_f  = scorer_cand_probs if sample_mask is None else scorer_cand_probs[sample_mask]
+            fut_f   = ego_fut        if sample_mask is None else ego_fut[sample_mask]
+            mask_f  = ego_mask       if sample_mask is None else ego_mask[sample_mask]
+            b, _, T, M, K, D = mu_f.shape
+            joint = probs_f.squeeze(1)[:, :, None] * cand_f          # (b,M,K)
+            mu_r    = mu_f.reshape(b, 1, T, M * K, D)
+            sig_r   = sig_f.reshape(b, 1, T, M * K, D)
+            joint_r = joint.reshape(b, M * K).unsqueeze(1)           # (b,1,M*K)
+            return self.compute_nll(mu_r, sig_r, joint_r, fut_f, mask=mask_f)
 
         # Selection diagnostics
         if batch_idx == 0 and dataloader_idx == 0:
@@ -2481,7 +2522,10 @@ class CombinedTrajPredSystem(LightningModule):
             probs_m = ego_probs[sample_mask]
             fut_m = ego_fut[sample_mask]
             mask_m = ego_mask[sample_mask]
-            nll_m = self.compute_nll(mu_m, sig_m, probs_m, fut_m, mask=mask_m)
+            if scorer_cand_probs is not None:
+                nll_m = _full_dist_nll(sample_mask)
+            else:
+                nll_m = self.compute_nll(mu_m, sig_m, probs_m, fut_m, mask=mask_m)
             self.test_mode_nll[mode_name](nll_m)
             self.log(f"test/mode_nll/{mode_name}",
                      self.test_mode_nll[mode_name], on_step=False, on_epoch=True)
@@ -2527,7 +2571,10 @@ class CombinedTrajPredSystem(LightningModule):
             self.log(f"{prefix}/prob_fde/{key}", self.test_prob_fde[key], on_step=False, on_epoch=True)
 
         # ---- NLL and RMSE ----
-        nll = self.compute_nll(ego_mu, ego_sigma, ego_probs, ego_fut, mask=ego_mask)
+        if scorer_cand_probs is not None:
+            nll = _full_dist_nll(None)
+        else:
+            nll = self.compute_nll(ego_mu, ego_sigma, ego_probs, ego_fut, mask=ego_mask)
         self.test_nll(nll)
         self.log(f"{prefix}/nll", self.test_nll, on_step=False, on_epoch=True, prog_bar=True)
 
