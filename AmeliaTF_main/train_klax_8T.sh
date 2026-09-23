@@ -9,8 +9,8 @@
 #SBATCH --output=klax_8T_50.out
 #SBATCH --error=klax_8T_50.err
 
-#SBATCH --partition=sae
-#SBATCH --account=pilot_sae_gpu
+#SBATCH --partition=andrena
+#SBATCH --account=pilot_andrena
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=60G
