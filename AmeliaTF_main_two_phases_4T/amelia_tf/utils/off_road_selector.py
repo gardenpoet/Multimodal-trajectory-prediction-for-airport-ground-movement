@@ -44,6 +44,12 @@ class OffRoadSelector:
     - 'ade_oracle': Select by minimum ADE to GT. Upper bound for any selector;
       uses ground truth, so for analysis/comparison only, NOT deployable.
 
+    - 'random': Deterministic (seeded) uniform-random candidate per (sample,
+      mode). Naive lower bound for analysis/comparison only, NOT deployable --
+      contrasts against 'ade_oracle' (upper bound) and a learned scorer to show
+      how much of the scorer's gain is genuine learned selection vs simply
+      having more candidates to draw from regardless of which one is picked.
+
     - 'heading': Legacy heading-anchor + off-road combined score. Kept for
       comparison. (Known to underperform fixed-k=0 on this data; the anchor
       matching systematically prefers the most aggressively-turning hypothesis,
@@ -103,7 +109,7 @@ class OffRoadSelector:
         heading_smooth_w: int = 5,            # smoothing window for cumulative turn
         off_road_epsilon: float = 10.0,       # weight of off_road_rate in combined score
         off_road_dist_epsilon: float = 0.1,   # weight of off_road_distance (metres)
-        selection_mode: str = 'speed_sigma',   # 'learned' | 'speed_sigma' | 'phase' | 'ade_oracle' | 'heading'
+        selection_mode: str = 'speed_sigma',   # 'learned' | 'speed_sigma' | 'phase' | 'ade_oracle' | 'random' | 'heading'
         # ---- phase-aware selection params ----
         runway_decel_speed_knots: float = 40.0,  # hist speed >= this on runway => landing rollout (decel)
         phase_forward_dist_km: float = 0.15,      # how far ahead to probe the map zone (~150 m)
@@ -1075,6 +1081,10 @@ class OffRoadSelector:
                             np.linalg.norm(all_traj_abs[m, k, b] - gt, axis=-1))
             selected_k_idx = torch.from_numpy(ade_all_oracle.argmin(axis=-1)).long()
 
+        elif self.selection_mode == 'random':
+            rng = np.random.default_rng(42)
+            selected_k_idx = torch.from_numpy(rng.integers(0, K, size=(B, M))).long()
+
         elif self.selection_mode == 'heading':
             combined = (heading_scores
                         + self.off_road_dist_epsilon * off_road_distances
@@ -1084,7 +1094,8 @@ class OffRoadSelector:
 
         else:
             raise ValueError(f"Unknown selection_mode: {self.selection_mode!r}. "
-                             f"Expected 'learned', 'speed_sigma', 'phase', 'ade_oracle', or 'heading'.")
+                             f"Expected 'learned', 'speed_sigma', 'phase', 'ade_oracle', "
+                             f"'random', or 'heading'.")
 
         selected_k_idx = selected_k_idx.long()
 
