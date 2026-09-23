@@ -1,0 +1,30 @@
+#!/bin/bash
+# Amelia num_futures ablation: retrain KLAX H50 with 8 raw candidate
+# trajectories per mode instead of the default 4. See train_kbos_8T.sh for
+# the full rationale/caveats. Off-road eval is disabled by default now
+# (commit 6227dd1), so this shouldn't hit the same test-phase slowdown that
+# klax_baseline_50 (num_futures=4) did.
+
+#SBATCH --job-name=amelia_train_klax_8T
+#SBATCH --output=klax_8T_50.out
+#SBATCH --error=klax_8T_50.err
+
+#SBATCH --partition=sae
+#SBATCH --account=pilot_sae_gpu
+#SBATCH --gres=gpu:1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=60G
+#SBATCH --time=120:00:00
+
+cd $SLURM_SUBMIT_DIR
+
+module load miniforge/25.3.0
+conda activate amelia_env
+module load cuda/12.2.2-gcc-12.2.0
+
+export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
+export HYDRA_FULL_ERROR=1
+
+python -m amelia_tf.train_klax \
+    task_name=train_klax_8T \
+    model.net.config.decoder.num_futures=8
