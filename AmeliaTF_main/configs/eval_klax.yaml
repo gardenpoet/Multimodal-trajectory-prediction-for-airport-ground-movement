@@ -1,0 +1,26 @@
+# @package _global_
+
+# Test-only config: loads an already-trained checkpoint and runs trainer.test()
+# without any training, via amelia_tf/eval.py. Same data/model/paths composition
+# as train_klax.yaml so the test set matches exactly what klax_baseline_50 was
+# trained/tested on.
+
+defaults:
+  - _self_
+  - data: klax2.yaml
+  - model: marginal.yaml
+  - logger: wandb.yaml
+  - trainer: gpu.yaml
+  - paths: default2.yaml
+  - extras: default.yaml
+  - hydra: default.yaml
+
+task_name: "eval"
+tags: ["dev"]
+
+# path to the checkpoint saved by the already-completed klax_baseline_50 training
+# run (job stuck at 92% test progress, but training itself finished and saved
+# checkpoints under ${paths.log_dir}/train/runs/<timestamp>/checkpoints/).
+# Override at the CLI if this guessed timestamp is wrong -- confirm with:
+#   ls /gpfs/scratch/exy064/ljx/Risk-Assessment/AmeliaTF_main/out/logs/train/runs/2026-09-18_16-13-14/checkpoints/
+ckpt_path: /gpfs/scratch/exy064/ljx/Risk-Assessment/AmeliaTF_main/out/logs/train/runs/2026-09-18_16-13-14/checkpoints/last.ckpt
