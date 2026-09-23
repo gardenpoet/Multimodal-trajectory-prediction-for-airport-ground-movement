@@ -37,4 +37,5 @@ python -m amelia_tf.eval_two_stage \
     mode_ckpt_path='${ckpt_dir}/${type}/${ckpt}/mode_model/${ckpt}_twophases_50.ckpt' \
     traj_ckpt_path='${ckpt_dir}/${type}/${ckpt}/traj_model/${ckpt}_twophases_2_50.ckpt' \
     model.traj_net.config.num_hypotheses=2 \
+    scorer.stage=eval \
     +model.extra_params.selection_mode=random

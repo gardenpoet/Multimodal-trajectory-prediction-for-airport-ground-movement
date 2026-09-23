@@ -32,4 +32,5 @@ python -m amelia_tf.eval_two_stage \
     traj_ckpt_path='${ckpt_dir}/${type}/${ckpt}/traj_model/${ckpt}_twophases_2_20.ckpt' \
     model.traj_net.config.num_hypotheses=2 \
     +model.traj_net.config.decoder.pred_len=20 \
+    scorer.stage=eval \
     +model.extra_params.selection_mode=random

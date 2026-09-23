@@ -29,4 +29,5 @@ python -m amelia_tf.eval_two_stage \
     data=kbos.yaml \
     mode_ckpt_path='${ckpt_dir}/${type}/${ckpt}/mode_model/${ckpt}_twophases_50.ckpt' \
     model.traj_net.config.num_hypotheses=4 \
+    scorer.stage=eval \
     +model.extra_params.selection_mode=random
