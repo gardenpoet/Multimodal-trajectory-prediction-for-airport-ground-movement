@@ -2,16 +2,19 @@
 
 # Test-only config: loads an already-trained checkpoint and runs trainer.test()
 # without any training, via amelia_tf/eval.py. Same data/model/paths composition
-# as train_klax.yaml so the test set matches exactly what klax_baseline_50 was
-# trained/tested on.
+# as train_klax.yaml (as actually configured on the HPC: data=klax.yaml,
+# paths=default.yaml -- NOT the "2"-suffixed pair, which is a different,
+# H20-horizon data config in this repo; this local clone's train_klax.yaml
+# is stale/out of sync with the HPC on this point) so the test set matches
+# exactly what klax_baseline_50 was trained/tested on.
 
 defaults:
   - _self_
-  - data: klax2.yaml
+  - data: klax.yaml
   - model: marginal.yaml
   - logger: wandb.yaml
   - trainer: gpu.yaml
-  - paths: default2.yaml
+  - paths: default.yaml
   - extras: default.yaml
   - hydra: default.yaml
 
