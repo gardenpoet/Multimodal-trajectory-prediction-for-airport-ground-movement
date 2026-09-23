@@ -21,6 +21,10 @@ defaults:
 task_name: "eval"
 tags: ["dev"]
 
+# data/klax.yaml -> default.yaml interpolates ${seed} into dataset.config.seed;
+# eval.py (unlike train_klax.py) has no top-level seed default of its own.
+seed: 42
+
 # path to the checkpoint saved by the already-completed klax_baseline_50 training
 # run (job stuck at 92% test progress, but training itself finished and saved
 # checkpoints under ${paths.log_dir}/train/runs/<timestamp>/checkpoints/).
