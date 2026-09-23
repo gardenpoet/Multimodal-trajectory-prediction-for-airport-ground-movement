@@ -96,6 +96,7 @@ extra_params:
   propagation: null
   tag: null
   use_agent_masks: false
+  enable_off_road_eval: false
 
   seen_airports: ${data.extra_params.data_prep.seen_airports}
   unseen_airports: ${data.extra_params.data_prep.unseen_airports}

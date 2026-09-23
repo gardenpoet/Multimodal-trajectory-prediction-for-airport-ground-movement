@@ -283,6 +283,8 @@ class TrajPred(LightningModule):
 
     def _get_off_road_evaluator(self, airport_code: str):
         """Lazy initialization of off-road evaluator for a specific airport."""
+        if not self.eparams.get('enable_off_road_eval', True):
+            return None
         if self._off_road_evaluator is None or self._current_airport != airport_code:
             from amelia_tf.utils.off_road_evaluator import OffRoadEvaluator
             self._off_road_evaluator = OffRoadEvaluator(
@@ -830,21 +832,22 @@ class TrajPred(LightningModule):
             airport_code = full_airport_codes[0]
             evaluator = self._get_off_road_evaluator(airport_code)
 
-            self._evaluate_off_road(
-                evaluator=evaluator,
-                ego_mu=ego_mu,
-                ego_pred_scores=ego_pred_scores,
-                sequences=full_sequences,
-                ego_agents=full_ego_agents,
-                airport_codes=full_airport_codes,
-                prefix=prefix,
-                rate_metric=off_road_metrics['rate'],
-                max_dist_metric=off_road_metrics['max_dist'],
-                mean_dist_metric=off_road_metrics['mean_dist'],
-                critical_rate_metric=off_road_metrics['critical_rate'],
-                episodes_metric=off_road_metrics['episodes'],
-                duration_metric=off_road_metrics['duration'],
-            )
+            if evaluator is not None:
+                self._evaluate_off_road(
+                    evaluator=evaluator,
+                    ego_mu=ego_mu,
+                    ego_pred_scores=ego_pred_scores,
+                    sequences=full_sequences,
+                    ego_agents=full_ego_agents,
+                    airport_codes=full_airport_codes,
+                    prefix=prefix,
+                    rate_metric=off_road_metrics['rate'],
+                    max_dist_metric=off_road_metrics['max_dist'],
+                    mean_dist_metric=off_road_metrics['mean_dist'],
+                    critical_rate_metric=off_road_metrics['critical_rate'],
+                    episodes_metric=off_road_metrics['episodes'],
+                    duration_metric=off_road_metrics['duration'],
+                )
         except Exception as e:
             print(f"Warning: Off-road evaluation failed: {e}")
             traceback.print_exc()
