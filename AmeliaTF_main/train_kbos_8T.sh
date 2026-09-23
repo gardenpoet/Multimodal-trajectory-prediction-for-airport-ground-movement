@@ -5,9 +5,11 @@
 # full retrain since num_futures slices the decoder's embedding dim
 # (in_size // num_futures), not just a head config change.
 #
-# task_name override keeps this run's hydra output dir (and hence its
-# checkpoints/ subfolder) and wandb notes field separate from the existing
-# kbos_baseline_50 run, which used the default task_name="train".
+# No task_name override: it's a strict enum (extra_params.task_names:
+# [train, eval] in configs/data/default.yaml, asserted in datamodule.py:206),
+# not a free-form label -- overriding it crashes data loading. The per-run
+# timestamped hydra output dir already keeps this run's checkpoints/ separate
+# from kbos_baseline_50's.
 
 #SBATCH --job-name=amelia_train_kbos_8T
 #SBATCH --output=kbos_8T_50.out
@@ -30,5 +32,4 @@ export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export HYDRA_FULL_ERROR=1
 
 python -m amelia_tf.train_kbos \
-    task_name=train_kbos_8T \
     model.net.config.decoder.num_futures=8

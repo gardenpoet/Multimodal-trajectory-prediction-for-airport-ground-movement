@@ -26,5 +26,4 @@ export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export HYDRA_FULL_ERROR=1
 
 python -m amelia_tf.train_klax \
-    task_name=train_klax_8T \
     model.net.config.decoder.num_futures=8

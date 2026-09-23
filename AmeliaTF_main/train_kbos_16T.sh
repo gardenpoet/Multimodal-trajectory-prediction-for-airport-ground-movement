@@ -24,5 +24,4 @@ export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export HYDRA_FULL_ERROR=1
 
 python -m amelia_tf.train_kbos \
-    task_name=train_kbos_16T \
     model.net.config.decoder.num_futures=16
