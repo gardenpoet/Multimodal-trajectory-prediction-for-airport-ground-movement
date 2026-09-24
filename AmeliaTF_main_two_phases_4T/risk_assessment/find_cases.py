@@ -55,6 +55,7 @@ CSV, e.g.:
     df[df.mode_error & df.ambiguous]                      # gating should matter here
     df[(df.risk_worst_case > 0) & (df.risk_naive == 0)]    # worst-case catches what naive misses
 """
+import os
 import hydra
 import numpy as np
 import pandas as pd
@@ -145,6 +146,22 @@ def main(cfg: DictConfig) -> None:
     # reads; normally the Trainer calls this automatically before setup(), but
     # this script bypasses the Trainer entirely for custom per-sample control.
     datamodule.prepare_data()
+    # TEMPORARY diagnostic: setup() has been failing with FileNotFoundError on
+    # the exact path prepare_data() should have just written, even though both
+    # read the same self.split_path dict on the same instance -- print what
+    # actually happened so the next run pins down whether prepare_data() wrote
+    # to a different resolved path, wrote nothing, or something else is going
+    # on. Remove once this is root-caused.
+    print(f"[find_cases][diag] split_dir={datamodule.data_prep.split_dir}", flush=True)
+    print(f"[find_cases][diag] split_path={datamodule.split_path}", flush=True)
+    split_dir_actual = os.path.dirname(datamodule.split_path["val"])
+    if os.path.isdir(split_dir_actual):
+        print(f"[find_cases][diag] listdir({split_dir_actual}) = {os.listdir(split_dir_actual)}", flush=True)
+    else:
+        print(f"[find_cases][diag] split dir does not exist: {split_dir_actual}", flush=True)
+    for _split in ["train", "val", "test"]:
+        _p = datamodule.split_path[_split]
+        print(f"[find_cases][diag] {_split}: {_p} exists={os.path.exists(_p)}", flush=True)
     datamodule.setup(stage="test")
     dataloader = datamodule.test_dataloader()
 
