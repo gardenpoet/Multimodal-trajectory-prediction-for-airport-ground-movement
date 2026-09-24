@@ -74,7 +74,7 @@ import pandas as pd
 import torch
 from omegaconf import DictConfig
 
-from amelia_tf.eval_two_stage import _build_nets
+from amelia_tf.eval_two_stage import _build_nets, _find_gmm, _SCORER_ATTRS
 from amelia_tf.models.traj_pred_combined import CombinedTrajPredSystem
 from amelia_tf.utils.utils import separate_ego_agent
 from amelia_tf.utils import global_masks as G
@@ -145,6 +145,31 @@ def main(cfg: DictConfig) -> None:
         raise ValueError("Pass +output_csv=/path/to/cases.csv on the command line.")
 
     mode_net, traj_net, device = _build_nets(cfg)
+
+    # _build_nets() / load_model_state() explicitly leaves any score head at
+    # random init (see its own docstring) -- the trained scorer weights live
+    # in a separate .pt file and are loaded onto the pristine backbone here,
+    # exactly like eval_two_stage.py's _stage_score_test does. Only relevant
+    # for a 2T/4T checkpoint with scorer.score_head_load set; for 1T there is
+    # no score head at all and this block is skipped entirely.
+    sh_path = cfg.get("scorer", {}).get("score_head_load") if cfg.get("scorer") else None
+    if sh_path:
+        gmm = _find_gmm(traj_net)
+        assert getattr(gmm, "enable_score_head", False) and gmm.score_mode != 0, \
+            "scorer.score_head_load is set but the traj_net GMM config doesn't have " \
+            "enable_score_head=true / a non-zero score_mode -- pass the same " \
+            "decoder.enable_score_head/score_mode/score_head_type overrides used " \
+            "when the score head was trained."
+        blob = torch.load(sh_path, map_location=device)
+        if isinstance(blob, dict) and set(blob.keys()) <= set(_SCORER_ATTRS):
+            for attr, sd in blob.items():
+                getattr(gmm, attr).load_state_dict(sd)
+        elif getattr(gmm, "per_mode_score", False):
+            gmm.score_heads.load_state_dict(blob)
+        else:
+            gmm.score_head.load_state_dict(blob)
+        print(f"[find_cases] loaded trained score head from {sh_path}")
+
     model = CombinedTrajPredSystem(
         mode_model=mode_net, traj_model=traj_net, extra_params=cfg.model.extra_params)
     model.to(device)
