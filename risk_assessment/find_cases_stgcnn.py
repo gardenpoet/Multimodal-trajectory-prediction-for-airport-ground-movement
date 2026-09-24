@@ -52,6 +52,15 @@ _STGCNN_REPO = os.path.join(_REPO_ROOT, "STGCNN_baseline")
 if _STGCNN_REPO not in sys.path:
     sys.path.insert(0, _STGCNN_REPO)
 
+# configs/paths/default.yaml resolves root_dir via ${oc.env:PROJECT_ROOT} --
+# normally set by this repo's own train_stgcnn_*.py via
+# pyrootutils.setup_root(__file__, indicator=".project-root", pythonpath=True),
+# which walks up from THEIR OWN file location to find STGCNN_baseline/.project-root.
+# That walk would find the wrong (or no) root starting from this file's
+# location instead, so set it directly to the repo whose config we're
+# actually composing.
+os.environ.setdefault("PROJECT_ROOT", _STGCNN_REPO)
+
 import hydra
 import numpy as np
 import pandas as pd

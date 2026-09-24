@@ -53,6 +53,15 @@ _BASELINE_REPO = os.path.join(_REPO_ROOT, "AmeliaTF_main")
 if _BASELINE_REPO not in sys.path:
     sys.path.insert(0, _BASELINE_REPO)
 
+# configs/paths/default.yaml resolves root_dir via ${oc.env:PROJECT_ROOT} --
+# normally set by this repo's own eval.py/train_*.py via
+# pyrootutils.setup_root(__file__, indicator=".project-root", pythonpath=True),
+# which walks up from THEIR OWN file location to find AmeliaTF_main/.project-root.
+# That walk would find the wrong (or no) root starting from this file's
+# location instead, so set it directly to the repo whose config we're
+# actually composing.
+os.environ.setdefault("PROJECT_ROOT", _BASELINE_REPO)
+
 import hydra
 import numpy as np
 import pandas as pd
