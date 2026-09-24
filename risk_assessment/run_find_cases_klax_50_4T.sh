@@ -1,7 +1,12 @@
 #!/bin/bash
-# KLAX H50, 4T checkpoint -- generalized find_cases.py test (mode x candidate
-# risk aggregation using the trained scorer's per-candidate probabilities).
-# Same checkpoint/score-head config as eval_scorer_klax_4T_test.sh.
+# KLAX H50, 4T checkpoint -- find_cases_two_stage.py's mode x candidate risk
+# aggregation using the trained scorer's per-candidate probabilities. Same
+# checkpoint/score-head config as
+# AmeliaTF_main_two_phases_4T/eval_scorer_klax_4T_test.sh.
+#
+# risk_assessment/ lives at the REPO ROOT (sibling to AmeliaTF_main,
+# AmeliaTF_main_two_phases_4T, STGCNN_baseline, ...) -- submit from the repo
+# root (e.g. /gpfs/scratch/exy064/ljx/Risk-Assessment/ on HPC).
 #
 # Sanity-check first with a few batches:
 #   sbatch --export=ALL,LIMIT=5 risk_assessment/run_find_cases_klax_50_4T.sh
@@ -29,7 +34,7 @@ module load cuda/12.2.2-gcc-12.2.0
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export HYDRA_FULL_ERROR=1
 
-OUT_CSV="/gpfs/scratch/exy064/ljx/Risk-Assessment/AmeliaTF_main_two_phases_4T/out/risk_assessment/klax_50_4T_cases.csv"
+OUT_CSV="/gpfs/scratch/exy064/ljx/Risk-Assessment/out/risk_assessment/klax_50_4T_cases.csv"
 mkdir -p "$(dirname "$OUT_CSV")"
 
 LIMIT_ARG=""
@@ -37,7 +42,7 @@ if [ -n "$LIMIT" ]; then
     LIMIT_ARG="+limit_batches=$LIMIT"
 fi
 
-python -m risk_assessment.find_cases \
+python -m risk_assessment.find_cases_two_stage \
     ckpt=klax2 \
     data=klax.yaml \
     mode_ckpt_path='${ckpt_dir}/${type}/${ckpt}/mode_model/${ckpt}_twophases_50.ckpt' \

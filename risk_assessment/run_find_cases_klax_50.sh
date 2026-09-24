@@ -1,14 +1,15 @@
 #!/bin/bash
-# First test of find_cases.py -- KLAX H50, 1T checkpoint (single trajectory
-# candidate per mode, sidestepping Contribution 2's K-selection question so
-# this experiment isolates Contribution 3's MODE-level phenomenon).
+# KLAX H50, 1T checkpoint (single trajectory candidate per mode, sidestepping
+# Contribution 2's K-selection question so this experiment isolates
+# Contribution 3's MODE-level phenomenon).
 #
-# This script (and find_cases.py itself) has NOT been executed anywhere
-# yet. Submit from the repo root (AmeliaTF_main_two_phases_4T/, same as
-# every other .sh script here), not from inside risk_assessment/. Run with
-# LIMIT=5 first (a handful of batches, seconds to run) to confirm it works
-# end-to-end and to eyeball the output CSV's columns before committing to
-# a full run:
+# risk_assessment/ lives at the REPO ROOT now (sibling to AmeliaTF_main,
+# AmeliaTF_main_two_phases_4T, STGCNN_baseline, ...), not inside any one
+# model's folder -- submit from the repo root (e.g.
+# /gpfs/scratch/exy064/ljx/Risk-Assessment/ on HPC), not from inside
+# AmeliaTF_main_two_phases_4T/. Run with LIMIT=5 first (a handful of
+# batches, seconds to run) to confirm it works end-to-end and to eyeball
+# the output CSV's columns before committing to a full run:
 #   sbatch --export=ALL,LIMIT=5 risk_assessment/run_find_cases_klax_50.sh
 # Once that looks right, submit the full run:
 #   sbatch risk_assessment/run_find_cases_klax_50.sh
@@ -34,7 +35,7 @@ module load cuda/12.2.2-gcc-12.2.0
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export HYDRA_FULL_ERROR=1
 
-OUT_CSV="/gpfs/scratch/exy064/ljx/Risk-Assessment/AmeliaTF_main_two_phases_4T/out/risk_assessment/klax_50_cases.csv"
+OUT_CSV="/gpfs/scratch/exy064/ljx/Risk-Assessment/out/risk_assessment/klax_50_cases.csv"
 mkdir -p "$(dirname "$OUT_CSV")"
 
 LIMIT_ARG=""
@@ -42,7 +43,7 @@ if [ -n "$LIMIT" ]; then
     LIMIT_ARG="+limit_batches=$LIMIT"
 fi
 
-python -m risk_assessment.find_cases \
+python -m risk_assessment.find_cases_two_stage \
     ckpt=klax2 \
     data=klax.yaml \
     mode_ckpt_path='${ckpt_dir}/${type}/${ckpt}/mode_model/${ckpt}_twophases_50.ckpt' \

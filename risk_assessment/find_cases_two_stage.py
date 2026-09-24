@@ -42,11 +42,21 @@ case selection.
 
 AMBIGUITY_MARGIN and RELEVANCE_RADIUS_KM are, likewise, starting points.
 
-Usage (reuses configs/eval_two_stage.yaml's data/paths/model composition,
-so all the usual data=/paths=/ckpt= overrides from the eval scripts in
-the parent directory apply):
+This is the AmeliaTF_main_two_phases_4T (two-stage) adapter specifically --
+risk_assessment/ lives at the top level of this repo, sibling to each
+model's own folder (AmeliaTF_main, AmeliaTF_main_two_phases_4T,
+STGCNN_baseline, ...), since it evaluates and compares across all of them.
+Run from the repo ROOT (the folder containing risk_assessment/ and every
+AmeliaTF_main*/STGCNN_baseline folder as siblings), not from inside
+AmeliaTF_main_two_phases_4T/ -- this file inserts that repo's path onto
+sys.path itself (see the sys.path.insert block above the imports) so
+`import amelia_tf...` resolves to ITS copy specifically.
 
-    python -m risk_assessment.find_cases \\
+Usage (reuses AmeliaTF_main_two_phases_4T/configs/eval_two_stage.yaml's
+data/paths/model composition, so all the usual data=/paths=/ckpt=
+overrides from that repo's own eval scripts apply):
+
+    python -m risk_assessment.find_cases_two_stage \\
         ckpt=klax2 data=klax.yaml \\
         mode_ckpt_path='${ckpt_dir}/${type}/${ckpt}/mode_model/${ckpt}_twophases_50.ckpt' \\
         traj_ckpt_path='${ckpt_dir}/${type}/${ckpt}/traj_model/${ckpt}_twophases_1_50.ckpt' \\
@@ -68,6 +78,20 @@ CSV, e.g.:
     df[df.mode_error & df.ambiguous]                      # gating should matter here
     df[(df.risk_worst_case > 0) & (df.risk_naive == 0)]    # worst-case catches what naive misses
 """
+import os
+import sys
+
+# This file lives in the top-level risk_assessment/ folder (sibling to each
+# model's own repo folder, e.g. AmeliaTF_main_two_phases_4T/), not inside any
+# one model's own package -- risk_assessment evaluates multiple model repos,
+# so it can't sit inside just one of them. Insert the specific model repo
+# this adapter targets onto sys.path so `import amelia_tf...` below resolves
+# to THAT repo's copy (each model repo vendors its own amelia_tf/amelia_scenes).
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_TWO_STAGE_REPO = os.path.join(_REPO_ROOT, "AmeliaTF_main_two_phases_4T")
+if _TWO_STAGE_REPO not in sys.path:
+    sys.path.insert(0, _TWO_STAGE_REPO)
+
 import hydra
 import numpy as np
 import pandas as pd
@@ -138,7 +162,8 @@ def _min_separation(ego_traj_abs, other_xy, other_valid):
     return float(dist[finite].min()) if finite.any() else float("inf")
 
 
-@hydra.main(version_base="1.3", config_path="../configs", config_name="eval_two_stage")
+@hydra.main(version_base="1.3", config_path="../AmeliaTF_main_two_phases_4T/configs",
+            config_name="eval_two_stage")
 def main(cfg: DictConfig) -> None:
     output_csv = cfg.get("output_csv")
     if not output_csv:
