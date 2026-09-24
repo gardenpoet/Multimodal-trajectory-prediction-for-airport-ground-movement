@@ -23,24 +23,10 @@ Risk proxy: minimum separation distance (same local-XY units as
 amelia_tf.utils.global_masks.G.XY, which are kilometres per this repo's
 range_scale convention) between ego's predicted future trajectory (for a
 given mode/candidate) and every other valid agent's ground-truth future
-trajectory, over the prediction horizon. A "conflict" is flagged when
-this distance drops below SAFETY_MARGIN_KM. Continuous "risk score" per
-hypothesis is max(0, SAFETY_MARGIN_KM - min_separation), i.e. zero when
-clear of the margin and rising the closer/more-violating the approach is.
-
-SAFETY_MARGIN_KM = 0.05 (50 m) is a single, unified threshold (not split
-by agent type/size -- the dataset only exposes a coarse 3-way Aircraft/
-Vehicle/Unknown role field, see amelia_tf.utils.global_masks.AGENT_TYPES,
-no per-aircraft wingspan/model/ADG, so a size-adaptive radius a la Pang
-et al. 2026's "mean-wingspan collision radius" isn't implementable here).
-50 m is conservative relative to FAA AC 150/5300-13B taxiway-design
-wingtip-clearance minima (~6-11 m across Aircraft Design Groups I-VI) and
-the right order of magnitude for Pang et al. 2026's wingspan-based radius
-for the aircraft mix in this dataset -- still sanity-check it against
-real separation minima for the airports you're using before trusting the
-case selection.
-
-AMBIGUITY_MARGIN and RELEVANCE_RADIUS_KM are, likewise, starting points.
+trajectory, over the prediction horizon. See common.py's docstring for
+the SAFETY_MARGIN_KM/AMBIGUITY_MARGIN/RELEVANCE_RADIUS_KM rationale and
+for aggregate_risk(), the shared naive/prob_weighted/worst_case/gated
+math every model adapter in this folder reuses unchanged.
 
 This is the AmeliaTF_main_two_phases_4T (two-stage) adapter specifically --
 risk_assessment/ lives at the top level of this repo, sibling to each
@@ -104,19 +90,12 @@ from amelia_tf.utils.utils import separate_ego_agent
 from amelia_tf.utils import global_masks as G
 from amelia_scenes.utils.transform_utils import inv_transform_batch
 
+from risk_assessment.common import (
+    to_device, min_separation, has_nearby_agent, aggregate_risk,
+    AMBIGUITY_MARGIN, SAFETY_MARGIN_KM,
+)
+
 MODE_NAMES = ["Hold", "Straight", "TurnLeft", "TurnRight"]  # index order per rule_based_encoding[..., :4]
-
-SAFETY_MARGIN_KM = 0.05     # ~50 m; see module docstring for the FAA/Pang-et-al-2026-informed rationale
-AMBIGUITY_MARGIN = 0.10     # top1-top2 probability gap among feasible modes, below which "ambiguous"
-RELEVANCE_RADIUS_KM = 1.0   # scene must have another valid agent within this to count as "relevant"
-
-
-def _to_device(batch, device):
-    sd = batch['scene_dict']
-    for k, v in sd.items():
-        if torch.is_tensor(v):
-            sd[k] = v.to(device)
-    return batch
 
 
 def _mode_candidate_trajectories_abs(ego_mu, sequences, ego_ids, hist_len):
@@ -144,22 +123,6 @@ def _mode_candidate_trajectories_abs(ego_mu, sequences, ego_ids, hist_len):
             future_rel = ego_mu[:, hist_len:, m, k, :2].detach().cpu().numpy()  # (B, T_pred, 2)
             traj_abs[m, k] = inv_transform_batch(future_rel, start_abs, start_heading)
     return traj_abs
-
-
-def _min_separation(ego_traj_abs, other_xy, other_valid):
-    """
-    ego_traj_abs: (T_pred, 2)
-    other_xy: (num_others, T_pred, 2)
-    other_valid: (num_others, T_pred) bool
-    Returns minimum separation distance over all valid (other agent, timestep)
-    pairs, or np.inf if there is no valid other agent at all.
-    """
-    if other_xy.shape[0] == 0:
-        return float("inf")
-    dist = np.linalg.norm(other_xy - ego_traj_abs[None, :, :], axis=-1)  # (num_others, T_pred)
-    dist = np.where(other_valid, dist, np.inf)
-    finite = np.isfinite(dist)
-    return float(dist[finite].min()) if finite.any() else float("inf")
 
 
 @hydra.main(version_base="1.3", config_path="../AmeliaTF_main_two_phases_4T/configs",
@@ -223,7 +186,7 @@ def main(cfg: DictConfig) -> None:
             if limit_batches is not None and batch_idx >= limit_batches:
                 print(f"[find_cases] stopping early: limit_batches={limit_batches}")
                 break
-            batch = _to_device(batch, device)
+            batch = to_device(batch, device)
             scene = batch['scene_dict']
 
             mode_probs, traj_mu, traj_sigma, traj_score = model.forward(batch)
@@ -304,16 +267,12 @@ def main(cfg: DictConfig) -> None:
                 # trajectory, so risk is computed on all of them uniformly, not
                 # just a single k=0 slice per mode.
                 min_sep = np.array([
-                    [_min_separation(traj_abs[m, k, b], other_xy_arr, other_valid_arr)
+                    [min_separation(traj_abs[m, k, b], other_xy_arr, other_valid_arr)
                      for k in range(K)]
                     for m in range(M)
                 ])  # (M, K)
-                risk_score = np.where(
-                    np.isfinite(min_sep), np.maximum(0.0, SAFETY_MARGIN_KM - min_sep), 0.0)
 
-                has_nearby_agent = bool(np.isfinite(min_sep).any() and np.nanmin(
-                    np.where(np.isfinite(min_sep), min_sep, np.inf)) < RELEVANCE_RADIUS_KM)
-                if not has_nearby_agent:
+                if not has_nearby_agent(min_sep):
                     continue  # Filter 1: no scenario relevance, skip
 
                 probs_b = probs_np[b]         # (M,)
@@ -332,22 +291,24 @@ def main(cfg: DictConfig) -> None:
                     feas_probs = np.sort(probs_b[feas_idx])[::-1]
                     ambiguous = bool((feas_probs[0] - feas_probs[1]) < AMBIGUITY_MARGIN)
 
+                # Flatten the (M, K) grid to the flat hypothesis list aggregate_risk
+                # expects. naive uses (argmax_mode, its scorer-selected candidate);
+                # the gated pool is each FEASIBLE mode's own scorer-selected
+                # candidate (not every (mode, candidate) pair in a feasible mode),
+                # matching how this was computed before the shared-module refactor.
+                min_sep_flat = min_sep.reshape(-1)
+                joint_probs_flat = joint_probs.reshape(-1)
+                naive_idx = argmax_mode * K + selected_k[argmax_mode]
+                gate_pool_idx = feas_idx * K + selected_k[feas_idx]
+
+                risk = aggregate_risk(
+                    min_sep_flat, joint_probs_flat, naive_idx, gate_pool_idx, ambiguous)
+
                 # Per-mode risk of the as-deployed (scorer-selected) candidate --
-                # what min_sep_{mode}/risk_score_{mode} report, and what naive/
-                # gated draw on, since neither strategy second-guesses the
-                # scorer's own within-mode choice.
+                # what min_sep_{mode}/risk_score_{mode} report.
+                risk_score = np.where(
+                    np.isfinite(min_sep), np.maximum(0.0, SAFETY_MARGIN_KM - min_sep), 0.0)
                 risk_selected = risk_score[np.arange(M), selected_k]  # (M,)
-
-                risk_naive = float(risk_selected[argmax_mode])
-                risk_prob_weighted = float((joint_probs * risk_score).sum())
-                risk_worst_case = float(risk_score.max())
-                risk_gated = float(risk_selected[feas_idx].max()) if (ambiguous and feas_idx.size) \
-                    else risk_naive
-
-                strategy_divergence = bool(
-                    (risk_worst_case > 0 and risk_naive == 0)
-                    or abs(risk_prob_weighted - risk_naive) > 1e-6
-                )
 
                 row = {
                     "airport": airport_ids[b] if airport_ids is not None else None,
@@ -359,11 +320,7 @@ def main(cfg: DictConfig) -> None:
                     "ambiguous": ambiguous,
                     "feasible_modes": ",".join(MODE_NAMES[i] for i in feas_idx),
                     "num_candidates": K,
-                    "risk_naive": risk_naive,
-                    "risk_prob_weighted": risk_prob_weighted,
-                    "risk_worst_case": risk_worst_case,
-                    "risk_gated": risk_gated,
-                    "strategy_divergence": strategy_divergence,
+                    **risk,
                     "scene_min_sep_gt": (
                         float(min_sep[gt_mode, selected_k[gt_mode]])
                         if np.isfinite(min_sep[gt_mode, selected_k[gt_mode]]) else None),
