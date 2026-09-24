@@ -88,6 +88,7 @@ from amelia_tf.eval_two_stage import _build_nets, _find_gmm, _SCORER_ATTRS
 from amelia_tf.models.traj_pred_combined import CombinedTrajPredSystem
 from amelia_tf.utils.utils import separate_ego_agent
 from amelia_tf.utils import global_masks as G
+from amelia_tf.utils.modes import TURN_MODES
 from amelia_scenes.utils.transform_utils import inv_transform_batch
 
 from risk_assessment.common import (
@@ -95,7 +96,20 @@ from risk_assessment.common import (
     AMBIGUITY_MARGIN, SAFETY_MARGIN_KM,
 )
 
-MODE_NAMES = ["Hold", "Straight", "TurnLeft", "TurnRight"]  # index order per rule_based_encoding[..., :4]
+# rule_based_encoding[..., :4]'s column order IS amelia_tf.utils.modes.TURN_MODES
+# (confirmed against amelia_scenes/processing/scene_processor.py's
+# _compute_separate_encoding, "8 columns: turn_TurnLeft, turn_TurnRight,
+# turn_Straight, turn_Hold, ..."). Import it rather than hardcode it a
+# second time -- a hardcoded ["Hold","Straight","TurnLeft","TurnRight"]
+# used to live here and was WRONG, silently mislabelling every gt_mode/
+# argmax_mode/min_sep_{mode}/risk_score_{mode} value in every CSV this
+# script produced before this fix (the underlying values were computed
+# correctly; only the mode NAME attached to each index was permuted). Any
+# prior analysis of this script's output needs re-reading with the
+# correct mapping: old "Hold" was really TurnLeft, old "Straight" was
+# really TurnRight, old "TurnLeft" was really Straight, old "TurnRight"
+# was really Hold.
+MODE_NAMES = TURN_MODES
 
 
 def _mode_candidate_trajectories_abs(ego_mu, sequences, ego_ids, hist_len):
