@@ -1,7 +1,9 @@
 #!/bin/bash
 # Batch-submits every Contribution 3 risk-assessment case-finding script
 # (two-stage 1T/2T/4T, Amelia baseline, STGCNN baseline) currently in this
-# folder, all against KLAX H50.
+# folder, across all three airports (KBOS/KLAX/KMSY) at H50. KBOS/KMSY's 1T
+# and Amelia-baseline legs are less battle-tested than KLAX's -- see each
+# script's own header comment for what's unverified.
 #
 # Run this from the REPO ROOT (the folder containing risk_assessment/ and
 # every AmeliaTF_main*/STGCNN_baseline folder as siblings), e.g.:
@@ -18,11 +20,21 @@
 set -e
 
 SCRIPTS=(
+    risk_assessment/run_find_cases_kbos_50.sh
+    risk_assessment/run_find_cases_kbos_50_2T.sh
+    risk_assessment/run_find_cases_kbos_50_4T.sh
+    risk_assessment/run_find_cases_kbos_50_amelia_baseline.sh
+    risk_assessment/run_find_cases_kbos_50_stgcnn.sh
     risk_assessment/run_find_cases_klax_50.sh
     risk_assessment/run_find_cases_klax_50_2T.sh
     risk_assessment/run_find_cases_klax_50_4T.sh
     risk_assessment/run_find_cases_klax_50_amelia_baseline.sh
     risk_assessment/run_find_cases_klax_50_stgcnn.sh
+    risk_assessment/run_find_cases_kmsy_50.sh
+    risk_assessment/run_find_cases_kmsy_50_2T.sh
+    risk_assessment/run_find_cases_kmsy_50_4T.sh
+    risk_assessment/run_find_cases_kmsy_50_amelia_baseline.sh
+    risk_assessment/run_find_cases_kmsy_50_stgcnn.sh
 )
 
 for script in "${SCRIPTS[@]}"; do
