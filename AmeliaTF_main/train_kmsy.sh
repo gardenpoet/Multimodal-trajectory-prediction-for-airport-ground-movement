@@ -1,10 +1,10 @@
 #!/bin/bash
 #SBATCH --job-name=amelia_train      
-#SBATCH --output=kmsy_mask_20.out
-#SBATCH --error=kmsy_mask_20.err           
+#SBATCH --output=kmsy_mask2_50.out
+#SBATCH --error=kmsy_mask2_50.err           
 
-#SBATCH --partition=sae             
-#SBATCH --account=pilot_sae_gpu     
+#SBATCH --partition=andrena
+#SBATCH --account=pilot_andrena     
 #SBATCH --gres=gpu:1                
 #SBATCH --cpus-per-task=8            
 #SBATCH --mem=60G                    
