@@ -141,6 +141,10 @@ def main(cfg: DictConfig) -> None:
     hist_len = model.hist_len
 
     datamodule = hydra.utils.instantiate(cfg.data)
+    # prepare_data() generates the per-run split-list files that setup() then
+    # reads; normally the Trainer calls this automatically before setup(), but
+    # this script bypasses the Trainer entirely for custom per-sample control.
+    datamodule.prepare_data()
     datamodule.setup(stage="test")
     dataloader = datamodule.test_dataloader()
 
