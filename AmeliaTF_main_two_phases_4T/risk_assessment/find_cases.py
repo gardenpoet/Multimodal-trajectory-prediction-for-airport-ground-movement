@@ -8,28 +8,39 @@ confidence gating -- so those samples can be used either as hand-picked
 case-study examples or as input to a statistical pass across the whole
 test set.
 
-Deliberately uses a trained 1T (single trajectory candidate per mode)
-checkpoint pair, sidestepping the K-candidate-selection question that
-Contribution 2 is about, so this experiment isolates the MODE-level
-phenomenon Contribution 3 is actually about. If you want to run this on a
-2T/4T checkpoint instead, the K-candidate is currently taken as k=0 for
-every mode (see `_mode_trajectories_abs` below) -- that is NOT a
-meaningful choice for K>1 and would need an explicit oracle/scorer pick
-first; don't do that without revisiting this script.
+Works with 1T/2T/4T checkpoints alike. Every (mode, candidate) pair is
+treated uniformly as one weighted hypothesis: joint_prob[m,k] =
+mode_prob[m] * scorer_cand_prob[k|m], where scorer_cand_prob is the same
+masked-softmax-over-K quantity the scorer NLL fix uses (see
+traj_pred_combined.py's test_step, sel_mode == 'score' branch) -- reused
+here rather than re-derived, so this stays consistent with how the model
+is actually deployed (hard mode-argmax, hard scorer-argmax-within-mode
+for risk_naive; the full joint for risk_prob_weighted/risk_worst_case).
+For a 1T checkpoint K=1 and this degenerates to the old mode-only
+behaviour (softmax over a single candidate is trivially 1.0).
 
 Risk proxy: minimum separation distance (same local-XY units as
 amelia_tf.utils.global_masks.G.XY, which are kilometres per this repo's
 range_scale convention) between ego's predicted future trajectory (for a
-given mode) and every other valid agent's ground-truth future trajectory,
-over the prediction horizon. A "conflict" is flagged when this distance
-drops below SAFETY_MARGIN_KM. Continuous "risk score" per mode is
-max(0, SAFETY_MARGIN_KM - min_separation), i.e. zero when clear of the
-margin and rising the closer/more-violating the approach is.
+given mode/candidate) and every other valid agent's ground-truth future
+trajectory, over the prediction horizon. A "conflict" is flagged when
+this distance drops below SAFETY_MARGIN_KM. Continuous "risk score" per
+hypothesis is max(0, SAFETY_MARGIN_KM - min_separation), i.e. zero when
+clear of the margin and rising the closer/more-violating the approach is.
 
-SAFETY_MARGIN_KM, AMBIGUITY_MARGIN and RELEVANCE_RADIUS_KM below are
-starting points, not domain-authoritative values -- sanity-check them
-against real separation minima for the airports you're using before
-trusting the case selection.
+SAFETY_MARGIN_KM = 0.05 (50 m) is a single, unified threshold (not split
+by agent type/size -- the dataset only exposes a coarse 3-way Aircraft/
+Vehicle/Unknown role field, see amelia_tf.utils.global_masks.AGENT_TYPES,
+no per-aircraft wingspan/model/ADG, so a size-adaptive radius a la Pang
+et al. 2026's "mean-wingspan collision radius" isn't implementable here).
+50 m is conservative relative to FAA AC 150/5300-13B taxiway-design
+wingtip-clearance minima (~6-11 m across Aircraft Design Groups I-VI) and
+the right order of magnitude for Pang et al. 2026's wingspan-based radius
+for the aircraft mix in this dataset -- still sanity-check it against
+real separation minima for the airports you're using before trusting the
+case selection.
+
+AMBIGUITY_MARGIN and RELEVANCE_RADIUS_KM are, likewise, starting points.
 
 Usage (reuses configs/eval_two_stage.yaml's data/paths/model composition,
 so all the usual data=/paths=/ckpt= overrides from the eval scripts in
@@ -46,9 +57,11 @@ Output: one row per (sample in the test set that has at least one other
 valid agent nearby), written to output_csv, with columns:
     airport, batch_idx, sample_idx, gt_mode, argmax_mode, mode_error,
     ambiguous, feasible_modes (comma-joined mode indices),
-    min_sep_mode_0..3, risk_score_mode_0..3,
+    min_sep_{mode} / risk_score_{mode} (for the scorer-selected candidate
+    within that mode -- i.e. what deployment would actually produce),
     risk_naive, risk_prob_weighted, risk_worst_case, risk_gated,
-    strategy_divergence, scene_min_sep_gt
+    strategy_divergence, scene_min_sep_gt (ground-truth mode's selected
+    candidate)
 
 Filtering to case-study or statistical subsets is just pandas on this
 CSV, e.g.:
@@ -69,7 +82,7 @@ from amelia_scenes.utils.transform_utils import inv_transform_batch
 
 MODE_NAMES = ["Hold", "Straight", "TurnLeft", "TurnRight"]  # index order per rule_based_encoding[..., :4]
 
-SAFETY_MARGIN_KM = 0.05     # ~50 m; sanity-check against real airport separation minima
+SAFETY_MARGIN_KM = 0.05     # ~50 m; see module docstring for the FAA/Pang-et-al-2026-informed rationale
 AMBIGUITY_MARGIN = 0.10     # top1-top2 probability gap among feasible modes, below which "ambiguous"
 RELEVANCE_RADIUS_KM = 1.0   # scene must have another valid agent within this to count as "relevant"
 
@@ -82,14 +95,12 @@ def _to_device(batch, device):
     return batch
 
 
-def _mode_trajectories_abs(ego_mu, sequences, ego_ids, hist_len):
+def _mode_candidate_trajectories_abs(ego_mu, sequences, ego_ids, hist_len):
     """
-    ego_mu: (B, T_total, M, K, D) relative predicted trajectories (ego only, K squeezed
-            out of the leading unsqueeze already, but kept as its own axis here).
+    ego_mu: (B, T_total, M, K, D) relative predicted trajectories (ego only).
     sequences: (B, A, T_total, D_seq) absolute per-agent sequences (whole scene).
     ego_ids: list[int] of length B.
-    Returns: (M, B, T_pred, 2) absolute XY per mode, using k=0 (see module docstring
-             for why this is only valid for a K=1 / 1T checkpoint).
+    Returns: (M, K, B, T_pred, 2) absolute XY per (mode, candidate).
     """
     B, T_total, M, K, D = ego_mu.shape
     T_pred = T_total - hist_len
@@ -103,10 +114,11 @@ def _mode_trajectories_abs(ego_mu, sequences, ego_ids, hist_len):
         for b in range(B)
     ])  # (B,)
 
-    traj_abs = np.zeros((M, B, T_pred, 2), dtype=np.float64)
+    traj_abs = np.zeros((M, K, B, T_pred, 2), dtype=np.float64)
     for m in range(M):
-        future_rel = ego_mu[:, hist_len:, m, 0, :2].detach().cpu().numpy()  # (B, T_pred, 2)
-        traj_abs[m] = inv_transform_batch(future_rel, start_abs, start_heading)
+        for k in range(K):
+            future_rel = ego_mu[:, hist_len:, m, k, :2].detach().cpu().numpy()  # (B, T_pred, 2)
+            traj_abs[m, k] = inv_transform_batch(future_rel, start_abs, start_heading)
     return traj_abs
 
 
@@ -191,8 +203,28 @@ def main(cfg: DictConfig) -> None:
             agent_masks = scene['agent_masks']
             B, A = sequences.shape[:2]
             M = ego_probs.shape[1]
+            K = ego_mu.shape[3]
 
-            traj_abs = _mode_trajectories_abs(ego_mu, sequences, ego_ids, hist_len)  # (M,B,T_pred,2)
+            # Per-(mode, candidate) probability, mirroring traj_pred_combined.py's
+            # test_step (sel_mode == 'score' branch) exactly: mask-weighted mean of
+            # the scorer's per-timestep score over the future horizon, then softmax
+            # over K within each mode. For a 1T checkpoint (K=1, no score head
+            # trained) traj_score is None and there is nothing to select between --
+            # every mode's single candidate gets probability 1.
+            if traj_score is not None:
+                ego_score = separate_ego_agent(traj_score, ego_ids).squeeze(1)  # (B, T_total, M, K)
+                ego_mask = separate_ego_agent(agent_masks, ego_ids).squeeze(1)  # (B, T_total)
+                fut_mask = ego_mask[:, hist_len:].float()                       # (B, Tp)
+                m_exp = fut_mask[:, :, None, None]                              # (B, Tp, 1, 1)
+                denom = m_exp.sum(dim=1).clamp_min(1)                           # (B, 1, 1)
+                s_pt = ego_score[:, hist_len:]                                  # (B, Tp, M, K)
+                score_fut = (s_pt * m_exp).sum(dim=1) / denom                   # (B, M, K)
+                cand_probs = torch.softmax(score_fut, dim=-1).detach().cpu().numpy()  # (B, M, K)
+            else:
+                cand_probs = np.ones((B, M, K), dtype=np.float64)
+
+            traj_abs = _mode_candidate_trajectories_abs(
+                ego_mu, sequences, ego_ids, hist_len)  # (M,K,B,T_pred,2)
 
             probs_np = ego_probs.detach().cpu().numpy()
             gt_mode_np = ego_true_mode.detach().cpu().numpy()
@@ -210,7 +242,7 @@ def main(cfg: DictConfig) -> None:
                     other_xy.append(xy_a)
                     other_valid.append(valid_a)
 
-                T_pred = traj_abs.shape[2]
+                T_pred = traj_abs.shape[3]
                 if other_xy:
                     other_xy_arr = np.stack(other_xy, axis=0)
                     other_valid_arr = np.stack(other_valid, axis=0)
@@ -218,10 +250,14 @@ def main(cfg: DictConfig) -> None:
                     other_xy_arr = np.zeros((0, T_pred, 2))
                     other_valid_arr = np.zeros((0, T_pred), dtype=bool)
 
+                # (M, K) grid: every (mode, candidate) hypothesis is one weighted
+                # trajectory, so risk is computed on all of them uniformly, not
+                # just a single k=0 slice per mode.
                 min_sep = np.array([
-                    _min_separation(traj_abs[m, b], other_xy_arr, other_valid_arr)
+                    [_min_separation(traj_abs[m, k, b], other_xy_arr, other_valid_arr)
+                     for k in range(K)]
                     for m in range(M)
-                ])
+                ])  # (M, K)
                 risk_score = np.where(
                     np.isfinite(min_sep), np.maximum(0.0, SAFETY_MARGIN_KM - min_sep), 0.0)
 
@@ -230,7 +266,11 @@ def main(cfg: DictConfig) -> None:
                 if not has_nearby_agent:
                     continue  # Filter 1: no scenario relevance, skip
 
-                probs_b = probs_np[b]
+                probs_b = probs_np[b]         # (M,)
+                cand_probs_b = cand_probs[b]  # (M, K), sums to 1 over K within each mode
+                joint_probs = probs_b[:, None] * cand_probs_b  # (M, K), sums to 1 overall
+                selected_k = cand_probs_b.argmax(-1)  # (M,) -- as-deployed candidate per mode
+
                 gt_mode = int(gt_mode_np[b])
                 argmax_mode = int(probs_b.argmax())
                 mode_error = argmax_mode != gt_mode
@@ -242,10 +282,16 @@ def main(cfg: DictConfig) -> None:
                     feas_probs = np.sort(probs_b[feas_idx])[::-1]
                     ambiguous = bool((feas_probs[0] - feas_probs[1]) < AMBIGUITY_MARGIN)
 
-                risk_naive = float(risk_score[argmax_mode])
-                risk_prob_weighted = float((probs_b * risk_score).sum())
+                # Per-mode risk of the as-deployed (scorer-selected) candidate --
+                # what min_sep_{mode}/risk_score_{mode} report, and what naive/
+                # gated draw on, since neither strategy second-guesses the
+                # scorer's own within-mode choice.
+                risk_selected = risk_score[np.arange(M), selected_k]  # (M,)
+
+                risk_naive = float(risk_selected[argmax_mode])
+                risk_prob_weighted = float((joint_probs * risk_score).sum())
                 risk_worst_case = float(risk_score.max())
-                risk_gated = float(risk_score[feas_idx].max()) if (ambiguous and feas_idx.size) \
+                risk_gated = float(risk_selected[feas_idx].max()) if (ambiguous and feas_idx.size) \
                     else risk_naive
 
                 strategy_divergence = bool(
@@ -262,17 +308,21 @@ def main(cfg: DictConfig) -> None:
                     "mode_error": mode_error,
                     "ambiguous": ambiguous,
                     "feasible_modes": ",".join(MODE_NAMES[i] for i in feas_idx),
+                    "num_candidates": K,
                     "risk_naive": risk_naive,
                     "risk_prob_weighted": risk_prob_weighted,
                     "risk_worst_case": risk_worst_case,
                     "risk_gated": risk_gated,
                     "strategy_divergence": strategy_divergence,
-                    "scene_min_sep_gt": float(min_sep[gt_mode]) if np.isfinite(min_sep[gt_mode]) else None,
+                    "scene_min_sep_gt": (
+                        float(min_sep[gt_mode, selected_k[gt_mode]])
+                        if np.isfinite(min_sep[gt_mode, selected_k[gt_mode]]) else None),
                 }
                 for m in range(M):
                     row[f"min_sep_{MODE_NAMES[m]}"] = (
-                        float(min_sep[m]) if np.isfinite(min_sep[m]) else None)
-                    row[f"risk_score_{MODE_NAMES[m]}"] = float(risk_score[m])
+                        float(min_sep[m, selected_k[m]])
+                        if np.isfinite(min_sep[m, selected_k[m]]) else None)
+                    row[f"risk_score_{MODE_NAMES[m]}"] = float(risk_selected[m])
                 rows.append(row)
 
             if batch_idx % 50 == 0:
