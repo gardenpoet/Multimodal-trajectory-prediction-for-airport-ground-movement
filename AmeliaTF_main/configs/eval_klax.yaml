@@ -25,12 +25,13 @@ tags: ["dev"]
 # eval.py (unlike train_klax.py) has no top-level seed default of its own.
 seed: 42
 
-# path to the checkpoint saved by the already-completed klax_baseline_50 training
-# run (job stuck at 92% test progress, but training itself finished and saved
-# checkpoints under ${paths.log_dir}/train/runs/<timestamp>/checkpoints/).
-# Uses the best-val-metric checkpoint (epoch_062.ckpt, save_top_k=1 on
-# val/ade/t=max), matching what train_klax.py's own test step would have used
-# (trainer.checkpoint_callback.best_model_path) -- NOT last.ckpt, which is a
-# later, non-best epoch (mtime ~19h after epoch_062.ckpt, so training kept
-# running past epoch 62 without ever beating its validation score).
-ckpt_path: /gpfs/scratch/exy064/ljx/Risk-Assessment/AmeliaTF_main/out/logs/train/runs/2026-09-18_16-13-14/checkpoints/epoch_062.ckpt
+# Best-val-metric checkpoint (epoch_062.ckpt, save_top_k=1 on val/ade/t=max)
+# from the already-completed klax_baseline_50 training run (job stuck at 92%
+# test progress, but training itself finished and saved checkpoints under
+# ${paths.log_dir}/train/runs/2026-09-18_16-13-14/checkpoints/) -- NOT
+# last.ckpt, which is a later, non-best epoch (mtime ~19h after epoch_062.ckpt,
+# so training kept running past epoch 62 without ever beating its validation
+# score). Copied into datasets/amelia/checkpoints/Single-Airport/klax/ (a
+# consolidated, airport-named location alongside the two-stage model's
+# klax2/klax_20 checkpoints) rather than left under the run-timestamped path.
+ckpt_path: /gpfs/scratch/exy064/ljx/Risk-Assessment/AmeliaTF_main/datasets/amelia/checkpoints/Single-Airport/klax/klax_baseline_50.ckpt

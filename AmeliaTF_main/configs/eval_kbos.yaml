@@ -1,0 +1,30 @@
+# @package _global_
+
+# Test-only config: loads an already-trained checkpoint and runs trainer.test()
+# without any training, via amelia_tf/eval.py. Same data/model/paths composition
+# as eval_klax.yaml, for the KBOS leg of the same 2026-09-18 batch training run
+# (kbos/klax/kmsy all submitted within the same minute -- confirmed via
+# out/logs/train/runs/2026-09-18_16-12-43/.hydra/overrides.yaml's task: kbos).
+
+defaults:
+  - _self_
+  - data: kbos.yaml
+  - model: marginal.yaml
+  - logger: wandb.yaml
+  - trainer: gpu.yaml
+  - paths: default.yaml
+  - extras: default.yaml
+  - hydra: default.yaml
+
+task_name: "eval"
+tags: ["dev"]
+
+seed: 42
+
+# Only checkpoint saved for this run: epoch_060.ckpt (no other epoch_*.ckpt
+# present alongside last.ckpt in this run's checkpoints/ dir, so there is no
+# best-vs-last ambiguity to resolve here, unlike eval_klax.yaml's case).
+# Copied into datasets/amelia/checkpoints/Single-Airport/kbos/ (a
+# consolidated, airport-named location alongside the two-stage model's
+# kbos2/kbos_20 checkpoints) rather than left under the run-timestamped path.
+ckpt_path: /gpfs/scratch/exy064/ljx/Risk-Assessment/AmeliaTF_main/datasets/amelia/checkpoints/Single-Airport/kbos/kbos_baseline_50.ckpt
