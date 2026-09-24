@@ -91,7 +91,7 @@ def _hypothesis_trajectories_abs(ego_mu, sequences, ego_ids, hist_len):
         for b in range(B)
     ], axis=0)  # (B, 2)
     start_heading = np.array([
-        float(sequences[b, ego_ids[b], hist_len - 1, G.HD].detach().cpu().numpy())
+        float(sequences[b, ego_ids[b], hist_len - 1, G.HD].detach().cpu().item())
         for b in range(B)
     ])  # (B,), degrees -- inv_transform expects degrees (see its docstring)
 

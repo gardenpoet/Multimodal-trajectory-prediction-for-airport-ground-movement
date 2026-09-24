@@ -83,7 +83,7 @@ def _ego_trajectory_abs(ego_mu, sequences, ego_ids, hist_len):
     traj_abs = np.zeros_like(future_rel)
     for b in range(B):
         start_abs = sequences[b, ego_ids[b], hist_len - 1, G.XY].detach().cpu().numpy().flatten()
-        start_heading = float(sequences[b, ego_ids[b], hist_len - 1, G.HD].detach().cpu().numpy())
+        start_heading = float(sequences[b, ego_ids[b], hist_len - 1, G.HD].detach().cpu().item())
         traj_abs[b] = inv_transform(future_rel[b], start_abs, start_heading)
     return traj_abs
 
