@@ -100,6 +100,35 @@ def min_separation(ego_traj_abs, other_xy, other_valid):
     return float(dist[finite].min()) if finite.any() else float("inf")
 
 
+def min_separation_with_type(ego_traj_abs, other_xy, other_valid, other_types):
+    """
+    Same as min_separation, but also identifies WHICH other agent achieved
+    the minimum and returns its role type (amelia_tf.utils.global_masks.
+    AGENT_TYPES: 0=Aircraft, 1=Vehicle, 2=Unknown). Ground service vehicles
+    legitimately operate within sub-metre distance of a gate-adjacent
+    aircraft as routine, non-hazardous ground ops -- a "near miss" whose
+    closest agent turns out to be a Vehicle is very likely not the
+    aircraft-aircraft conflict a risk-assessment case study wants to show,
+    so this is meant for screening candidate cases, not for the aggregate
+    per-hypothesis risk_score computation (which stays type-agnostic, per
+    the single-unified-threshold decision -- see this module's docstring).
+
+    other_types: (num_others,) int array, one role-type code per other agent
+        (matching other_xy/other_valid's ordering).
+
+    Returns (min_dist, closest_agent_type) -- closest_agent_type is None if
+    there's no valid other agent at all (min_dist is inf in that case too).
+    """
+    if other_xy.shape[0] == 0:
+        return float("inf"), None
+    dist = np.linalg.norm(other_xy - ego_traj_abs[None, :, :], axis=-1)  # (num_others, T_pred)
+    dist = np.where(other_valid, dist, np.inf)
+    if not np.isfinite(dist).any():
+        return float("inf"), None
+    agent_i, _t_i = np.unravel_index(np.argmin(dist), dist.shape)
+    return float(dist[agent_i].min()), int(other_types[agent_i])
+
+
 def has_nearby_agent(min_sep_flat, relevance_radius_km=RELEVANCE_RADIUS_KM):
     """min_sep_flat: (N,) min separation per hypothesis, for one sample."""
     finite = np.isfinite(min_sep_flat)

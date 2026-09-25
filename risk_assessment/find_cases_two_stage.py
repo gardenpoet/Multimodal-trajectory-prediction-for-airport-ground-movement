@@ -92,9 +92,12 @@ from amelia_tf.utils.modes import TURN_MODES
 from amelia_scenes.utils.transform_utils import inv_transform_batch
 
 from risk_assessment.common import (
-    to_device, min_separation, has_nearby_agent, aggregate_risk,
-    seed_for_reproducible_ego_selection, AMBIGUITY_MARGIN, SAFETY_MARGIN_KM,
+    to_device, min_separation, min_separation_with_type, has_nearby_agent,
+    aggregate_risk, seed_for_reproducible_ego_selection, AMBIGUITY_MARGIN,
+    SAFETY_MARGIN_KM,
 )
+
+AGENT_TYPE_NAMES = {0: "Aircraft", 1: "Vehicle", 2: "Unknown"}
 
 # rule_based_encoding[..., :4]'s column order IS amelia_tf.utils.modes.TURN_MODES
 # (confirmed against amelia_scenes/processing/scene_processor.py's
@@ -235,6 +238,7 @@ def main(cfg: DictConfig) -> None:
 
             sequences = scene['sequences']
             agent_masks = scene['agent_masks']
+            agent_types = scene['agent_types']
             B, A = sequences.shape[:2]
             M = ego_probs.shape[1]
             K = ego_mu.shape[3]
@@ -265,7 +269,7 @@ def main(cfg: DictConfig) -> None:
 
             for b in range(B):
                 ego_id = ego_ids[b]
-                other_xy, other_valid = [], []
+                other_xy, other_valid, other_types = [], [], []
                 for a in range(A):
                     if a == ego_id:
                         continue
@@ -275,14 +279,18 @@ def main(cfg: DictConfig) -> None:
                     xy_a = sequences[b, a, hist_len:, G.XY].detach().cpu().numpy()
                     other_xy.append(xy_a)
                     other_valid.append(valid_a)
+                    t_a = agent_types[b, a]
+                    other_types.append(int(t_a.item()) if torch.is_tensor(t_a) else int(t_a))
 
                 T_pred = traj_abs.shape[3]
                 if other_xy:
                     other_xy_arr = np.stack(other_xy, axis=0)
                     other_valid_arr = np.stack(other_valid, axis=0)
+                    other_types_arr = np.array(other_types)
                 else:
                     other_xy_arr = np.zeros((0, T_pred, 2))
                     other_valid_arr = np.zeros((0, T_pred), dtype=bool)
+                    other_types_arr = np.zeros((0,), dtype=int)
 
                 # (M, K) grid: every (mode, candidate) hypothesis is one weighted
                 # trajectory, so risk is computed on all of them uniformly, not
@@ -331,6 +339,18 @@ def main(cfg: DictConfig) -> None:
                     np.isfinite(min_sep), np.maximum(0.0, SAFETY_MARGIN_KM - min_sep), 0.0)
                 risk_selected = risk_score[np.arange(M), selected_k]  # (M,)
 
+                # For case-study screening only (not fed into risk_score/
+                # aggregate_risk, which stay type-agnostic per the single-
+                # unified-threshold decision -- see common.py's docstring):
+                # ground service vehicles legitimately operate within
+                # sub-metre distance of a gate-adjacent aircraft as routine,
+                # non-hazardous ground ops, so a tiny scene_min_sep_gt whose
+                # closest agent is a Vehicle is very likely NOT an
+                # aircraft-aircraft near miss.
+                _, gt_closest_type = min_separation_with_type(
+                    traj_abs[gt_mode, selected_k[gt_mode], b], other_xy_arr,
+                    other_valid_arr, other_types_arr)
+
                 row = {
                     "airport": airport_ids[b] if airport_ids is not None else None,
                     "batch_idx": batch_idx,
@@ -354,6 +374,7 @@ def main(cfg: DictConfig) -> None:
                     "scene_min_sep_gt": (
                         float(min_sep[gt_mode, selected_k[gt_mode]])
                         if np.isfinite(min_sep[gt_mode, selected_k[gt_mode]]) else None),
+                    "scene_min_sep_gt_agent_type": AGENT_TYPE_NAMES.get(gt_closest_type),
                 }
                 for m in range(M):
                     row[f"min_sep_{MODE_NAMES[m]}"] = (
