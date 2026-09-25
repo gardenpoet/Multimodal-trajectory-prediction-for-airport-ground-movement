@@ -328,6 +328,15 @@ def main(cfg: DictConfig) -> None:
                     "airport": airport_ids[b] if airport_ids is not None else None,
                     "batch_idx": batch_idx,
                     "sample_idx": b,
+                    # ego agent selection can be randomised per-sample (see
+                    # amelia_dataset.py's transform_scene_data, random_ego) and
+                    # isn't guaranteed reproducible across reruns (worker/
+                    # prefetch order can affect the RNG draw sequence even with
+                    # shuffle=False) -- recording the resolved agent index here
+                    # lets a later case-study script pick the SAME agent
+                    # directly for (batch_idx, sample_idx) instead of relying
+                    # on re-drawing the same "random" choice.
+                    "ego_id": ego_id,
                     "gt_mode": MODE_NAMES[gt_mode] if 0 <= gt_mode < len(MODE_NAMES) else gt_mode,
                     "argmax_mode": MODE_NAMES[argmax_mode],
                     "mode_error": mode_error,

@@ -255,6 +255,11 @@ def main(cfg: DictConfig) -> None:
                     "airport": airport_ids[b] if airport_ids is not None else None,
                     "batch_idx": batch_idx,
                     "sample_idx": b,
+                    # see find_cases_two_stage.py's row dict comment: ego agent
+                    # selection can be randomised per-sample and isn't
+                    # guaranteed reproducible across reruns, so record the
+                    # resolved index for later case-study lookups.
+                    "ego_id": ego_id,
                     "gt_mode": gt_mode,
                     "num_candidates": H,
                     "ambiguous": ambiguous,
