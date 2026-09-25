@@ -1,6 +1,7 @@
 
 
 import hydra
+import lightning as L
 import pyrootutils
 
 from lightning import LightningDataModule, LightningModule, Trainer
@@ -45,6 +46,18 @@ def evaluate(cfg: DictConfig) -> Tuple[dict, dict]:
         Tuple[dict, dict]: Dict with metrics and dict with all instantiated objects.
     """
     assert cfg.ckpt_path
+
+    # Unlike eval_two_stage.py/train_stgcnn_*.py, this entry point never called
+    # seed_everything -- cfg.seed (set to 42 in eval_klax.yaml etc.) was read
+    # but never actually applied to any RNG. transform_scene_data's random-ego
+    # selection (amelia_dataset.py) therefore ran on an OS-entropy-seeded,
+    # non-reproducible random state. workers=True lets Lightning's Trainer
+    # deterministically re-seed each DataLoader worker subprocess from
+    # cfg.seed, independent of how much randomness model instantiation
+    # consumed in the main process beforehand -- matching the other two
+    # models' eval entry points.
+    if cfg.get("seed"):
+        L.seed_everything(cfg.seed, workers=True)
 
     log.info(f"Instantiating datamodule <{cfg.data._target_}>")
     datamodule: LightningDataModule = hydra.utils.instantiate(cfg.data)

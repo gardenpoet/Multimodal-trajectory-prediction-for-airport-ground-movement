@@ -93,7 +93,7 @@ from amelia_scenes.utils.transform_utils import inv_transform_batch
 
 from risk_assessment.common import (
     to_device, min_separation, has_nearby_agent, aggregate_risk,
-    AMBIGUITY_MARGIN, SAFETY_MARGIN_KM,
+    seed_for_reproducible_ego_selection, AMBIGUITY_MARGIN, SAFETY_MARGIN_KM,
 )
 
 # rule_based_encoding[..., :4]'s column order IS amelia_tf.utils.modes.TURN_MODES
@@ -180,6 +180,13 @@ def main(cfg: DictConfig) -> None:
     hist_len = model.hist_len
 
     datamodule = hydra.utils.instantiate(cfg.data)
+    # See common.py's seed_for_reproducible_ego_selection docstring -- forces
+    # num_workers=0 and seeds random/numpy/torch so the per-sample random ego
+    # selection in amelia_dataset.py's transform_scene_data is reproducible
+    # and, crucially, IDENTICAL across separate find_cases_*.py runs (this
+    # script bypasses the Trainer entirely, so none of Lightning's own
+    # seed_everything(workers=True) per-worker reproducibility applies here).
+    seed_for_reproducible_ego_selection(datamodule, seed=cfg.get("seed", 42))
     # prepare_data() generates the per-run split-list files that setup() then
     # reads; normally the Trainer calls this automatically before setup(), but
     # this script bypasses the Trainer entirely for custom per-sample control.

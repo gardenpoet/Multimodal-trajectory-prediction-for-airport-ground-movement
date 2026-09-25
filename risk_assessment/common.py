@@ -19,12 +19,56 @@ the airports you're using before trusting the case selection.
 
 AMBIGUITY_MARGIN and RELEVANCE_RADIUS_KM are, likewise, starting points.
 """
+import random
+
 import numpy as np
 import torch
 
 SAFETY_MARGIN_KM = 0.05     # ~50 m; see module docstring for the FAA/Pang-et-al-2026-informed rationale
 AMBIGUITY_MARGIN = 0.10     # top1-top2 probability gap, below which "ambiguous"
 RELEVANCE_RADIUS_KM = 1.0   # scene must have another valid agent within this to count as "relevant"
+
+
+def seed_for_reproducible_ego_selection(datamodule, seed=42):
+    """
+    amelia_dataset.py's transform_scene_data draws the ego agent for each
+    sample via plain `random.randint()` (random_ego=True is the default and is
+    never overridden for eval/test anywhere in any of the three model repos)
+    -- with no seeding at all, that draw is OS-entropy-seeded and different
+    every run, AND different across separate model scripts (each is an
+    independent process). Two consequences that matter for this framework
+    specifically: (1) a flagged case can't be re-located later for a case
+    study without ALSO recording ego_id (see the row dict in every adapter
+    here) since re-running won't reproduce the same draw; (2) comparing
+    naive/prob_weighted/etc. risk ACROSS models for "the same" (batch_idx,
+    sample_idx) is only a fair comparison if every model's run resolved that
+    index to the same underlying (scene, ego agent) pair, which nothing
+    guarantees without an explicit, controlled seed.
+
+    Unlike eval_two_stage.py/train_stgcnn_*.py (which call
+    `L.seed_everything(cfg.seed, workers=True)` before handing the DataLoader
+    to a Trainer, which is what lets Lightning re-seed each worker
+    subprocess deterministically from cfg.seed regardless of how much
+    randomness model instantiation consumed beforehand in the main process),
+    every adapter in this folder bypasses the Trainer entirely and therefore
+    never gets that reproducibility machinery for free. Rather than
+    reimplementing Lightning's per-worker seeding here, this forces
+    num_workers=0 (data loading happens in THIS process, no fork-inherited or
+    independently-OS-seeded worker RNG state to reason about) and seeds
+    random/numpy/torch directly, immediately before the dataset is touched --
+    slower than parallel loading, but every adapter run with the same seed
+    now draws the identical, deterministic sequence of ego-agent choices,
+    which is what actually matters for cross-model comparability here (this
+    trades that guarantee for data-loading throughput deliberately).
+
+    Call this AFTER building the model/loading checkpoints (so whatever
+    randomness those steps consume doesn't matter) and BEFORE
+    datamodule.prepare_data()/setup().
+    """
+    datamodule.eparams.num_workers = 0
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
 
 
 def to_device(batch, device):

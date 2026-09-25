@@ -74,6 +74,7 @@ from amelia_scenes.utils.transform_utils import inv_transform
 
 from risk_assessment.common import (
     to_device, min_separation, has_nearby_agent, aggregate_risk,
+    seed_for_reproducible_ego_selection,
 )
 
 GT_MODE_NAMES = TURN_MODES  # descriptive only -- see module docstring
@@ -124,6 +125,13 @@ def main(cfg: DictConfig) -> None:
     max_pred_len = model.max_pred_len
 
     datamodule = hydra.utils.instantiate(cfg.data)
+    # See common.py's seed_for_reproducible_ego_selection docstring -- forces
+    # num_workers=0 and seeds random/numpy/torch so the per-sample random ego
+    # selection in amelia_dataset.py's transform_scene_data is reproducible
+    # and IDENTICAL across separate find_cases_*.py runs (this script never
+    # goes through a Trainer, so Lightning's own seed_everything(workers=True)
+    # per-worker reproducibility never applies here).
+    seed_for_reproducible_ego_selection(datamodule, seed=cfg.get("seed", 42))
     datamodule.prepare_data()
     datamodule.setup(stage="test")
     dataloader = datamodule.test_dataloader()
