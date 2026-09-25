@@ -4,7 +4,9 @@
 # candidate is an Aircraft or a Vehicle (ground service vehicles legitimately
 # operate within sub-metre distance of a parked aircraft -- if that's what's
 # behind a "near-miss" candidate, it isn't the aircraft-aircraft near miss
-# the case study wants). No model/checkpoint needed, so no GPU requested.
+# the case study wants). No model/checkpoint is actually needed (pure CPU
+# work), but --gres=gpu:1 is requested anyway since this partition/account
+# requires it to submit at all.
 #
 # Run from the repo root:
 #   sbatch risk_assessment/run_check_agent_types.sh
@@ -16,6 +18,7 @@
 #SBATCH --partition=andrena
 #SBATCH --account=pilot_andrena
 
+#SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=16G
 #SBATCH --time=01:00:00
