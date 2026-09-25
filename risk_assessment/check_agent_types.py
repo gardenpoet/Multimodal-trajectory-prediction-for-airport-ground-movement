@@ -31,6 +31,14 @@ _TWO_STAGE_REPO = os.path.join(_REPO_ROOT, "AmeliaTF_main_two_phases_4T")
 if _TWO_STAGE_REPO not in sys.path:
     sys.path.insert(0, _TWO_STAGE_REPO)
 
+# configs/paths/default.yaml resolves root_dir via ${oc.env:PROJECT_ROOT}
+# (unlike base_dir, which is hardcoded there) -- same issue as
+# find_cases_amelia_baseline.py/find_cases_stgcnn.py needed fixing for,
+# just not hit by find_cases_two_stage.py in practice (whatever shell state
+# those jobs happened to inherit). Set it explicitly rather than rely on
+# that.
+os.environ.setdefault("PROJECT_ROOT", _TWO_STAGE_REPO)
+
 import hydra
 import numpy as np
 import torch
