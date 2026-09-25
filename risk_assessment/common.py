@@ -66,6 +66,11 @@ def seed_for_reproducible_ego_selection(datamodule, seed=42):
     datamodule.prepare_data()/setup().
     """
     datamodule.eparams.num_workers = 0
+    # test_dataloader()/val_dataloader() pass persistent_workers unconditionally
+    # (unlike train_dataloader(), which guards it behind `if num_workers > 0`)
+    # -- PyTorch's DataLoader raises ValueError("persistent_workers option
+    # needs num_workers > 0") if that's left True here.
+    datamodule.eparams.persistent_workers = False
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
