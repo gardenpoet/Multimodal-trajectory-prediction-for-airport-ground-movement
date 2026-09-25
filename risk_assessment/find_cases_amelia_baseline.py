@@ -209,6 +209,11 @@ def main(cfg: DictConfig) -> None:
             agent_masks = scene['agent_masks']
             agent_types = scene['agent_types']
             B, A = sequences.shape[:2]
+            # merge_seq1d_by_padding concatenates (torch.cat, not
+            # torch.stack) each padded per-sample vector -- flat
+            # (B * per_sample_len,), not (B, per_sample_len). Reshape to
+            # recover per-sample indexing.
+            agent_types = agent_types.reshape(B, -1)
             H = ego_pred_scores.shape[1]
 
             traj_abs = _hypothesis_trajectories_abs(

@@ -126,6 +126,14 @@ def main(cfg: DictConfig) -> None:
             agent_masks = scene["agent_masks"]
             agent_types = scene["agent_types"]
             B, A = sequences.shape[:2]
+            # merge_seq1d_by_padding (data_utils.py, used for any batched
+            # field with no dedicated case in collate_batch, which is how
+            # agent_types gets here) concatenates each padded per-sample
+            # vector with torch.cat, not torch.stack -- the result is a FLAT
+            # (B * per_sample_len,) tensor, not (B, per_sample_len). Reshape
+            # to recover per-sample indexing (padding order is preserved by
+            # construction, so this is safe even if per_sample_len != A).
+            agent_types = agent_types.reshape(B, -1)
 
             for b in range(B):
                 key = (batch_idx, b)
