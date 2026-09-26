@@ -36,7 +36,17 @@ def get_filtered_list(airport, base_dir, file_list, min_agents, max_agents):
                   int(f.split('/')[-1].split('.')
                       [0].split('-')[-1]) <= max_agents
                   ]
-    return data_files
+    # os.listdir() above has no guaranteed order, so two independently-
+    # populated proc_full_scenes/ copies (one per model repo) can end up
+    # with a different starting order for the SAME set of files. prepare_data()
+    # then applies random.shuffle(seed=self.seed) to this list -- a fixed
+    # seed permutes POSITIONS, so a different starting order still produces
+    # a different final order, and a +limit_batches=N prefix (the ~1/10
+    # subsample risk_assessment/'s scripts default to) would silently be a
+    # DIFFERENT subset of scenes per repo. Sorting first gives every repo
+    # the same canonical starting order, so the same seed then gives the
+    # same final order and the same batch-index prefix everywhere.
+    return sorted(data_files)
 
 
 def load_blacklist(data_prep: EasyDict, airport_list: list):
