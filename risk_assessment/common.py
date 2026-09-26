@@ -119,17 +119,20 @@ def min_separation_with_type(ego_traj_abs, other_xy, other_valid, other_types):
     other_types: (num_others,) int array, one role-type code per other agent
         (matching other_xy/other_valid's ordering).
 
-    Returns (min_dist, closest_agent_type) -- closest_agent_type is None if
-    there's no valid other agent at all (min_dist is inf in that case too).
+    Returns (min_dist, closest_agent_type, t_idx) -- t_idx is the index into
+    ego_traj_abs's own time axis at which the minimum occurred (so the
+    caller can look up ego_traj_abs[t_idx] for an on/off-road location
+    check, see check_on_road()). closest_agent_type and t_idx are both None
+    if there's no valid other agent at all (min_dist is inf in that case too).
     """
     if other_xy.shape[0] == 0:
-        return float("inf"), None
+        return float("inf"), None, None
     dist = np.linalg.norm(other_xy - ego_traj_abs[None, :, :], axis=-1)  # (num_others, T_pred)
     dist = np.where(other_valid, dist, np.inf)
     if not np.isfinite(dist).any():
-        return float("inf"), None
-    agent_i, _t_i = np.unravel_index(np.argmin(dist), dist.shape)
-    return float(dist[agent_i].min()), int(other_types[agent_i])
+        return float("inf"), None, None
+    agent_i, t_i = np.unravel_index(np.argmin(dist), dist.shape)
+    return float(dist[agent_i, t_i]), int(other_types[agent_i]), int(t_i)
 
 
 def load_airport_ref(assets_dir, airport):
@@ -175,6 +178,42 @@ def xy_array_to_latlon(xy, ref):
         g = geod.Direct(ref_lat, ref_lon, b, r)
         out.append([g["lat2"], g["lon2"]])
     return out
+
+
+def check_on_road(evaluator, xy_point, ref):
+    """
+    For case-screening: is this local-XY point on the airport's mapped
+    taxiway/runway movement-area network, or off it (a proxy for "at a
+    gate/apron/stand", which are not covered by that network -- same logic
+    the Ch.3 turn-mode Hold-gate-proximity check used)? On-road + close to
+    an edge corroborates a genuine movement-area event; off-road + far
+    corroborates a routine gate/stand encounter (e.g. a Vehicle's legitimate
+    close approach to a parked aircraft). Does not resolve Aircraft-vs-
+    Vehicle identity, just gate-vs-movement-area location.
+
+    evaluator: an amelia_tf.utils.off_road_evaluator.OffRoadEvaluator
+        instance, duck-typed here (not imported -- this module stays
+        repo-agnostic; each of the 3 repos has its own copy of that class).
+    xy_point: (2,) local-XY point (this repo's range_scale-km convention).
+    ref: (ref_lat, ref_lon, range_scale) from load_airport_ref().
+
+    Returns (is_on_road: bool, dist_to_nearest_edge_m: float), or
+    (None, None) if xy_point is invalid (NaN/padded) or the evaluator has
+    no reference network loaded for this airport.
+    """
+    if getattr(evaluator, "reference_gdf", None) is None:
+        return None, None
+    x, y = xy_point
+    if not (np.isfinite(x) and np.isfinite(y)):
+        return None, None
+    latlon = xy_array_to_latlon(np.array([[x, y]]), ref)[0]
+    if latlon is None:
+        return None, None
+    lat, lon = latlon
+    result = evaluator._evaluate_trajectory([(lon, lat)], safety_margin=1.0)
+    is_off = result["per_point_is_off"][0]
+    dist = result["per_point_distances"][0]
+    return (not is_off), float(dist)
 
 
 def has_nearby_agent(min_sep_flat, relevance_radius_km=RELEVANCE_RADIUS_KM):

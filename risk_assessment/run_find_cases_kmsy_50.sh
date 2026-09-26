@@ -38,10 +38,13 @@ export HYDRA_FULL_ERROR=1
 OUT_CSV="/gpfs/scratch/exy064/ljx/Risk-Assessment/out/risk_assessment/kmsy_50_cases.csv"
 mkdir -p "$(dirname "$OUT_CSV")"
 
-LIMIT_ARG=""
-if [ -n "$LIMIT" ]; then
-    LIMIT_ARG="+limit_batches=$LIMIT"
-fi
+# Defaults to a ~1/10 random subsample: prepare_data() shuffles the scene
+# file list with a fixed seed BEFORE assigning batch indices, so a
+# batch-index prefix is a genuine random subsample, not a biased "first N
+# files" slice. Override with --export=ALL,LIMIT=<batches> for a full run
+# (KMSY test set: ~430955 scenes / 128 batch_size =~ 3367 batches) or a
+# quick sanity check (e.g. LIMIT=5).
+LIMIT_ARG="+limit_batches=${LIMIT:-340}"
 
 python -m risk_assessment.find_cases_two_stage \
     ckpt=kmsy2 \

@@ -37,10 +37,10 @@ export HYDRA_FULL_ERROR=1
 OUT_CSV="/gpfs/scratch/exy064/ljx/Risk-Assessment/out/risk_assessment/klax_50_2T_cases.csv"
 mkdir -p "$(dirname "$OUT_CSV")"
 
-LIMIT_ARG=""
-if [ -n "$LIMIT" ]; then
-    LIMIT_ARG="+limit_batches=$LIMIT"
-fi
+# Defaults to a ~1/10 random subsample -- see run_find_cases_klax_50.sh's
+# comment for why a batch-index prefix is valid here. Override with
+# --export=ALL,LIMIT=<batches> for a full run or a quick sanity check.
+LIMIT_ARG="+limit_batches=${LIMIT:-420}"
 
 python -m risk_assessment.find_cases_two_stage \
     ckpt=klax2 \

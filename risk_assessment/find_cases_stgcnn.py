@@ -39,10 +39,16 @@ train_stgcnn_<airport>[_20].sh script here):
         ckpt_path=/gpfs/scratch/exy064/ljx/Risk-Assessment/STGCNN_baseline/out/logs/train/runs/2026-09-17_18-23-16/checkpoints/epoch_176.ckpt \\
         +output_csv=/gpfs/scratch/exy064/ljx/Risk-Assessment/out/risk_assessment/klax_stgcnn_50_cases.csv
 
-Output columns: airport, batch_idx, sample_idx, gt_mode, num_candidates
-(always 1), risk_naive, risk_prob_weighted, risk_worst_case, risk_gated
-(all four identical per row -- see module docstring), ambiguous (always
-False), top1_min_sep_km.
+Output columns: airport, batch_idx, sample_idx, scene_file, ego_id,
+gt_mode, num_candidates (always 1), risk_naive, risk_prob_weighted,
+risk_worst_case, risk_gated (all four identical per row -- see module
+docstring), ambiguous (always False), top1_min_sep_km (PREDICTED: this
+model's only hypothesis vs other agents' real trajectories) +
+top1_min_sep_agent_type/_on_road/_edge_dist_m, true_min_sep_km (REALIZED:
+ego's own actual trajectory vs reality) + true_min_sep_agent_type/
+_on_road/_edge_dist_m -- see find_cases_two_stage.py's docstring for the
+predicted-vs-realized distinction and common.check_on_road's docstring
+for the on/off-road gate-vs-movement-area proxy.
 """
 import os
 import sys
@@ -70,15 +76,29 @@ from omegaconf import DictConfig
 from amelia_tf.utils.utils import separate_ego_agent
 from amelia_tf.utils import global_masks as G
 from amelia_tf.utils.modes import TURN_MODES
+from amelia_tf.utils.off_road_evaluator import OffRoadEvaluator
 from amelia_scenes.utils.transform_utils import inv_transform
 
 from risk_assessment.common import (
     to_device, min_separation, min_separation_with_type, has_nearby_agent,
     aggregate_risk, seed_for_reproducible_ego_selection,
+    load_airport_ref, check_on_road,
 )
 
 GT_MODE_NAMES = TURN_MODES  # descriptive only -- see module docstring
 AGENT_TYPE_NAMES = {0: "Aircraft", 1: "Vehicle", 2: "Unknown"}
+
+# Lazily built, one OffRoadEvaluator per airport -- see
+# find_cases_two_stage.py's equivalent cache for why.
+_OFF_ROAD_EVALUATORS = {}
+_AIRPORT_REFS = {}
+
+
+def _get_off_road_evaluator(assets_dir, airport):
+    if airport not in _OFF_ROAD_EVALUATORS:
+        _OFF_ROAD_EVALUATORS[airport] = OffRoadEvaluator(assets_dir, airport)
+        _AIRPORT_REFS[airport] = load_airport_ref(assets_dir, airport)
+    return _OFF_ROAD_EVALUATORS[airport], _AIRPORT_REFS[airport]
 
 
 def _ego_trajectory_abs(ego_mu, sequences, ego_ids, hist_len):
@@ -229,8 +249,30 @@ def main(cfg: DictConfig) -> None:
                 # equivalent comment (ground service vehicles legitimately
                 # operate within sub-metre distance of a gate-adjacent
                 # aircraft as routine, non-hazardous ground ops).
-                _, top1_closest_type = min_separation_with_type(
+                _, top1_closest_type, top1_t_idx = min_separation_with_type(
                     traj_abs[b], other_xy_arr, other_valid_arr, other_types_arr)
+
+                # true_min_sep_km: ego's own REALIZED trajectory vs reality
+                # (folds in what used to need a separate check_agent_types.py
+                # pass) -- see find_cases_two_stage.py's equivalent comment
+                # for the predicted-vs-realized distinction. Same fut_end
+                # window as traj_abs (see _ego_trajectory_abs's caller) so
+                # both trajectories cover the same timesteps.
+                fut_end = hist_len + max_pred_len
+                real_ego_xy = sequences[b, ego_id, hist_len:fut_end, G.XY].detach().cpu().numpy()
+                true_min_sep, true_closest_type, true_t_idx = min_separation_with_type(
+                    real_ego_xy, other_xy_arr, other_valid_arr, other_types_arr)
+
+                # On/off-road location check (folds in what used to need a
+                # separate check_case_location.py pass) -- see
+                # common.check_on_road's docstring.
+                evaluator, ref = _get_off_road_evaluator(cfg.paths.assets_dir, airport_ids[b])
+                top1_on_road, top1_edge_dist = (
+                    check_on_road(evaluator, traj_abs[b][top1_t_idx], ref)
+                    if top1_t_idx is not None else (None, None))
+                true_on_road, true_edge_dist = (
+                    check_on_road(evaluator, real_ego_xy[true_t_idx], ref)
+                    if true_t_idx is not None else (None, None))
 
                 gt_mode = None
                 if gt_mode_np is not None:
@@ -259,6 +301,13 @@ def main(cfg: DictConfig) -> None:
                     **risk,
                     "top1_min_sep_km": float(min_sep[0]) if np.isfinite(min_sep[0]) else None,
                     "top1_min_sep_agent_type": AGENT_TYPE_NAMES.get(top1_closest_type),
+                    "top1_min_sep_on_road": top1_on_road,
+                    "top1_min_sep_edge_dist_m": top1_edge_dist,
+                    "true_min_sep_km": (
+                        float(true_min_sep) if np.isfinite(true_min_sep) else None),
+                    "true_min_sep_agent_type": AGENT_TYPE_NAMES.get(true_closest_type),
+                    "true_min_sep_on_road": true_on_road,
+                    "true_min_sep_edge_dist_m": true_edge_dist,
                 }
                 rows.append(row)
 

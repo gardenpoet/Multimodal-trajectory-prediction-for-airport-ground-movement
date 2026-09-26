@@ -51,13 +51,19 @@ overrides from that repo's own eval scripts apply):
 
 Output: one row per (sample in the test set that has at least one other
 valid agent nearby), written to output_csv, with columns:
-    airport, batch_idx, sample_idx, gt_mode, argmax_mode, mode_error,
-    ambiguous, feasible_modes (comma-joined mode indices),
-    min_sep_{mode} / risk_score_{mode} (for the scorer-selected candidate
-    within that mode -- i.e. what deployment would actually produce),
-    risk_naive, risk_prob_weighted, risk_worst_case, risk_gated,
-    strategy_divergence, scene_min_sep_gt (ground-truth mode's selected
-    candidate)
+    airport, batch_idx, sample_idx, scene_file, ego_id, gt_mode,
+    argmax_mode, mode_error, ambiguous, feasible_modes (comma-joined mode
+    indices), min_sep_{mode} / risk_score_{mode} (for the scorer-selected
+    candidate within that mode -- i.e. what deployment would actually
+    produce), risk_naive, risk_prob_weighted, risk_worst_case, risk_gated,
+    strategy_divergence, scene_min_sep_gt (PREDICTED: ground-truth mode's
+    selected candidate vs other agents' real trajectories) +
+    scene_min_sep_gt_agent_type/_on_road/_edge_dist_m, true_min_sep_gt
+    (REALIZED: ego's own actual trajectory vs reality -- what used to need
+    a separate check_agent_types.py pass) + true_min_sep_gt_agent_type/
+    _on_road/_edge_dist_m (what used to need a separate
+    check_case_location.py pass -- see common.check_on_road's docstring
+    for the on/off-road gate-vs-movement-area proxy).
 
 Filtering to case-study or statistical subsets is just pandas on this
 CSV, e.g.:
@@ -97,13 +103,27 @@ from amelia_tf.models.traj_pred_combined import CombinedTrajPredSystem
 from amelia_tf.utils.utils import separate_ego_agent
 from amelia_tf.utils import global_masks as G
 from amelia_tf.utils.modes import TURN_MODES
+from amelia_tf.utils.off_road_evaluator import OffRoadEvaluator
 from amelia_scenes.utils.transform_utils import inv_transform_batch
 
 from risk_assessment.common import (
     to_device, min_separation, min_separation_with_type, has_nearby_agent,
     aggregate_risk, seed_for_reproducible_ego_selection, AMBIGUITY_MARGIN,
-    SAFETY_MARGIN_KM,
+    SAFETY_MARGIN_KM, load_airport_ref, check_on_road,
 )
+
+# Lazily built, one OffRoadEvaluator per airport (each load is a real cost:
+# parses semantic_graph.pkl and builds a spatial index) -- reused across
+# every row in the loop below rather than rebuilt per sample.
+_OFF_ROAD_EVALUATORS = {}
+_AIRPORT_REFS = {}
+
+
+def _get_off_road_evaluator(assets_dir, airport):
+    if airport not in _OFF_ROAD_EVALUATORS:
+        _OFF_ROAD_EVALUATORS[airport] = OffRoadEvaluator(assets_dir, airport)
+        _AIRPORT_REFS[airport] = load_airport_ref(assets_dir, airport)
+    return _OFF_ROAD_EVALUATORS[airport], _AIRPORT_REFS[airport]
 
 AGENT_TYPE_NAMES = {0: "Aircraft", 1: "Vehicle", 2: "Unknown"}
 
@@ -361,9 +381,34 @@ def main(cfg: DictConfig) -> None:
                 # non-hazardous ground ops, so a tiny scene_min_sep_gt whose
                 # closest agent is a Vehicle is very likely NOT an
                 # aircraft-aircraft near miss.
-                _, gt_closest_type = min_separation_with_type(
-                    traj_abs[gt_mode, selected_k[gt_mode], b], other_xy_arr,
-                    other_valid_arr, other_types_arr)
+                gt_pred_xy = traj_abs[gt_mode, selected_k[gt_mode], b]
+                _, gt_closest_type, gt_t_idx = min_separation_with_type(
+                    gt_pred_xy, other_xy_arr, other_valid_arr, other_types_arr)
+
+                # scene_min_sep_gt (above) is the model's PREDICTED gt-mode
+                # trajectory vs other agents' REAL trajectories -- a
+                # forward-looking "could this plausibly happen" risk
+                # judgement, not what actually happened. true_min_sep_gt is
+                # the ego's own REALIZED trajectory vs reality -- folds in
+                # what used to be a separate check_agent_types.py pass, so
+                # every row gets ground-truth verification for free instead
+                # of only a hand-picked shortlist.
+                real_ego_xy = sequences[b, ego_id, hist_len:, G.XY].detach().cpu().numpy()
+                true_min_sep, true_closest_type, true_t_idx = min_separation_with_type(
+                    real_ego_xy, other_xy_arr, other_valid_arr, other_types_arr)
+
+                # On/off-road location check (folds in what used to be a
+                # separate check_case_location.py pass) -- see
+                # common.check_on_road's docstring. Checked at the ego's own
+                # position at the moment of closest approach, for both the
+                # predicted and the realized trajectory.
+                evaluator, ref = _get_off_road_evaluator(cfg.paths.assets_dir, airport_ids[b])
+                gt_on_road, gt_edge_dist = (
+                    check_on_road(evaluator, gt_pred_xy[gt_t_idx], ref)
+                    if gt_t_idx is not None else (None, None))
+                true_on_road, true_edge_dist = (
+                    check_on_road(evaluator, real_ego_xy[true_t_idx], ref)
+                    if true_t_idx is not None else (None, None))
 
                 row = {
                     "airport": airport_ids[b] if airport_ids is not None else None,
@@ -396,6 +441,13 @@ def main(cfg: DictConfig) -> None:
                         float(min_sep[gt_mode, selected_k[gt_mode]])
                         if np.isfinite(min_sep[gt_mode, selected_k[gt_mode]]) else None),
                     "scene_min_sep_gt_agent_type": AGENT_TYPE_NAMES.get(gt_closest_type),
+                    "scene_min_sep_gt_on_road": gt_on_road,
+                    "scene_min_sep_gt_edge_dist_m": gt_edge_dist,
+                    "true_min_sep_gt": (
+                        float(true_min_sep) if np.isfinite(true_min_sep) else None),
+                    "true_min_sep_gt_agent_type": AGENT_TYPE_NAMES.get(true_closest_type),
+                    "true_min_sep_gt_on_road": true_on_road,
+                    "true_min_sep_gt_edge_dist_m": true_edge_dist,
                 }
                 for m in range(M):
                     row[f"min_sep_{MODE_NAMES[m]}"] = (

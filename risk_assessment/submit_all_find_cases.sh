@@ -10,12 +10,17 @@
 #   cd /gpfs/scratch/exy064/ljx/Risk-Assessment/
 #   bash risk_assessment/submit_all_find_cases.sh
 #
-# For a first sanity-check pass (a handful of batches each, seconds to
-# run), set LIMIT before calling this script -- it's forwarded to every
-# job the same way `sbatch --export=ALL,LIMIT=5 <script>` would:
+# Each script now defaults to LIMIT unset -> a ~1/10 random subsample
+# (batch-index prefix into a seed-shuffled file list, see each script's own
+# comment) rather than the full test set -- this is now the standard run,
+# not just a sanity check. For a quick syntax/wiring sanity check (a
+# handful of batches, seconds to run), set LIMIT before calling this
+# script -- it's forwarded to every job the same way
+# `sbatch --export=ALL,LIMIT=5 <script>` would:
 #   LIMIT=5 bash risk_assessment/submit_all_find_cases.sh
-# Once every job's .out/.err looks right, resubmit without LIMIT for the
-# full runs.
+# For a genuine FULL run instead of the ~1/10 default, pass a LIMIT larger
+# than the airport's total batch count (see each script's own comment for
+# the approximate total).
 
 set -e
 
