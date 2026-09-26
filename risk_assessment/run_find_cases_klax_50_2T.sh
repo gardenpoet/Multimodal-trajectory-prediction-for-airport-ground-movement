@@ -14,8 +14,8 @@
 #   sbatch risk_assessment/run_find_cases_klax_50_2T.sh
 
 #SBATCH --job-name=amelia_risk_klax_50_2T
-#SBATCH --output=risk_klax_50_2T_%j.out
-#SBATCH --error=risk_klax_50_2T_%j.err
+#SBATCH --output=risk_assessment/risk_klax_50_2T_%j.out
+#SBATCH --error=risk_assessment/risk_klax_50_2T_%j.err
 
 #SBATCH --partition=andrena
 #SBATCH --account=pilot_andrena
@@ -34,7 +34,7 @@ module load cuda/12.2.2-gcc-12.2.0
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export HYDRA_FULL_ERROR=1
 
-OUT_CSV="/gpfs/scratch/exy064/ljx/Risk-Assessment/out/risk_assessment/klax_50_2T_cases.csv"
+OUT_CSV="/gpfs/scratch/exy064/ljx/Risk-Assessment/risk_assessment/out/klax_50_2T_cases.csv"
 mkdir -p "$(dirname "$OUT_CSV")"
 
 # Defaults to a ~1/10 random subsample -- see run_find_cases_klax_50.sh's

@@ -11,8 +11,8 @@
 #   sbatch risk_assessment/run_case_risk_dynamics_kmsy_1T.sh
 
 #SBATCH --job-name=case_risk_dynamics_kmsy_1T
-#SBATCH --output=case_risk_dynamics_kmsy_1T_%j.out
-#SBATCH --error=case_risk_dynamics_kmsy_1T_%j.err
+#SBATCH --output=risk_assessment/case_risk_dynamics_kmsy_1T_%j.out
+#SBATCH --error=risk_assessment/case_risk_dynamics_kmsy_1T_%j.err
 
 #SBATCH --partition=andrena
 #SBATCH --account=pilot_andrena
@@ -31,7 +31,7 @@ module load cuda/12.2.2-gcc-12.2.0
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export HYDRA_FULL_ERROR=1
 
-OUT_JSON="/gpfs/scratch/exy064/ljx/Risk-Assessment/out/risk_assessment/kmsy_case_2708_36_dynamics_1T.json"
+OUT_JSON="/gpfs/scratch/exy064/ljx/Risk-Assessment/risk_assessment/out/kmsy_case_2708_36_dynamics_1T.json"
 mkdir -p "$(dirname "$OUT_JSON")"
 
 python -m risk_assessment.case_risk_dynamics \
