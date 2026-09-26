@@ -67,6 +67,21 @@ class BaseDataset(Dataset):
         self.encode_interp_flag = config.encode_interp_flag
         self.num_agent_types = len(G.AGENT_TYPES.keys())
 
+        # Default True (unchanged behaviour: a fresh per-scene random draw,
+        # amelia_dataset.py's __getitem__ -> transform_scene_data(random_ego=True)).
+        # risk_assessment/'s case-study scripts override this to False via
+        # +data.dataset.config.random_ego=false: agents_in_scene (this
+        # dataset's own agent_order metadata, baked into the scene file,
+        # identical across repos for the same scene) makes index 0 both
+        # deterministic AND repo-independent -- unlike a random draw seeded
+        # by iteration order (see the scene_file propagation commit; a
+        # random draw seeded by the SCENE's own identity would also work,
+        # but index 0 of a "critical"-ordered agent_order is simpler and
+        # picks the agent the dataset's own criticality metric ranks as
+        # most likely to interact with others, which is what a risk-focused
+        # case study wants anyway).
+        self.random_ego = getattr(config, 'random_ego', True)
+
     def set_split_list(self, split_path: str) -> None:
         with open(split_path, 'r') as fp:
             self.split_list = [line.strip() for line in fp]

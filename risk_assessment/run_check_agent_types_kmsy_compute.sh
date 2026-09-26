@@ -26,5 +26,6 @@ export HYDRA_FULL_ERROR=1
 
 python -m risk_assessment.check_agent_types \
     data=kmsy.yaml \
+    +data.dataset.config.random_ego=false \
     ckpt=kmsy2 \
     +targets_airport=kmsy

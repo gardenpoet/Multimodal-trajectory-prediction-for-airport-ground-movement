@@ -516,4 +516,4 @@ class AmeliaDataset(BaseDataset):
         # day-folder/filename, stripped of the repo-specific prefix) is,
         # since it identifies the underlying raw scene file itself.
         scene_file = os.path.relpath(str(item), self.in_data_dir)
-        return self.transform_scene_data(data, scene_file=scene_file)
+        return self.transform_scene_data(data, scene_file=scene_file, random_ego=self.random_ego)

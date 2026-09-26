@@ -34,5 +34,6 @@ export HYDRA_FULL_ERROR=1
 
 python -m risk_assessment.check_agent_types \
     data=klax.yaml \
+    +data.dataset.config.random_ego=false \
     ckpt=klax2 \
     +targets_airport=klax

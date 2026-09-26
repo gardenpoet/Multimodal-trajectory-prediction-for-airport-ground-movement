@@ -53,6 +53,7 @@ fi
 
 python -m risk_assessment.find_cases_stgcnn \
     --config-name=train_stgcnn_klax \
+    +data.dataset.config.random_ego=false \
     train=false \
     'ckpt_path=/gpfs/scratch/exy064/ljx/Risk-Assessment/STGCNN_baseline/out/logs/train/runs/2026-09-17_18-23-16/checkpoints/epoch_176.ckpt' \
     +output_csv="$OUT_CSV" \

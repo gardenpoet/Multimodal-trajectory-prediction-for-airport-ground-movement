@@ -19,10 +19,13 @@ the airports you're using before trusting the case selection.
 
 AMBIGUITY_MARGIN and RELEVANCE_RADIUS_KM are, likewise, starting points.
 """
+import json
+import os
 import random
 
 import numpy as np
 import torch
+from geographiclib.geodesic import Geodesic
 
 SAFETY_MARGIN_KM = 0.05     # ~50 m; see module docstring for the FAA/Pang-et-al-2026-informed rationale
 AMBIGUITY_MARGIN = 0.10     # top1-top2 probability gap, below which "ambiguous"
@@ -127,6 +130,51 @@ def min_separation_with_type(ego_traj_abs, other_xy, other_valid, other_types):
         return float("inf"), None
     agent_i, _t_i = np.unravel_index(np.argmin(dist), dist.shape)
     return float(dist[agent_i].min()), int(other_types[agent_i])
+
+
+def load_airport_ref(assets_dir, airport):
+    """
+    Returns (ref_lat, ref_lon, range_scale) from assets_dir/{airport}/
+    limits.json -- the reference point every repo's local-XY frame (G.XY,
+    km, this repo's range_scale convention) is defined relative to.
+    """
+    limits_path = os.path.join(assets_dir, airport, "limits.json")
+    with open(limits_path) as f:
+        d = json.load(f)
+    return d["ref_lat"], d["ref_lon"], d["range_scale"]
+
+
+def xy_array_to_latlon(xy, ref):
+    """
+    For map-overlay case-study plots: converts local-XY points (this repo's
+    range_scale-km convention, e.g. from G.XY) to (lat, lon) -- the shared
+    coordinate frame needed to plot trajectories from DIFFERENT model repos
+    (each with its own local-XY frame) on the same airport map.
+
+    xy: (N, 2) array, possibly containing NaN rows (invalid/padded
+        timesteps) -- those become None in the output rather than a bogus
+        lat/lon.
+    ref: (ref_lat, ref_lon, range_scale) from load_airport_ref().
+
+    Reimplements the same range+bearing geodesic conversion as
+    amelia_scenes.utils.transform_utils.xy_to_ll/direct_wrapper directly
+    (rather than importing it) so this module stays repo-agnostic -- it's
+    imported by adapters for three different repos, each putting a
+    different copy of amelia_scenes onto sys.path, and this avoids any
+    dependency on which one happens to be active when this is called.
+    """
+    ref_lat, ref_lon, range_scale = ref
+    geod = Geodesic.WGS84
+    out = []
+    for x, y in xy:
+        if not (np.isfinite(x) and np.isfinite(y)):
+            out.append(None)
+            continue
+        r = float(np.sqrt(x ** 2 + y ** 2)) * range_scale
+        b = float(np.degrees(np.arctan2(y, x)))
+        g = geod.Direct(ref_lat, ref_lon, b, r)
+        out.append([g["lat2"], g["lon2"]])
+    return out
 
 
 def has_nearby_agent(min_sep_flat, relevance_radius_km=RELEVANCE_RADIUS_KM):

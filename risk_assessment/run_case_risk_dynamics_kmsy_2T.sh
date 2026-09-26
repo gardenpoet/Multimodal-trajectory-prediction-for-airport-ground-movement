@@ -34,6 +34,7 @@ mkdir -p "$(dirname "$OUT_JSON")"
 
 python -m risk_assessment.case_risk_dynamics \
     ckpt=kmsy2 \
+    +data.dataset.config.random_ego=false \
     data=kmsy.yaml \
     mode_ckpt_path='${ckpt_dir}/${type}/${ckpt}/mode_model/${ckpt}_twophases_50.ckpt' \
     traj_ckpt_path='${ckpt_dir}/${type}/${ckpt}/traj_model/${ckpt}_twophases_2_50.ckpt' \

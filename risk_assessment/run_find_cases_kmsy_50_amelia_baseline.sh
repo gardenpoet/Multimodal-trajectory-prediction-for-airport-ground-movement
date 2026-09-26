@@ -42,5 +42,6 @@ fi
 
 python -m risk_assessment.find_cases_amelia_baseline \
     --config-name=eval_kmsy \
+    +data.dataset.config.random_ego=false \
     +output_csv="$OUT_CSV" \
     $LIMIT_ARG

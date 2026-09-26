@@ -37,5 +37,6 @@ export HYDRA_FULL_ERROR=1
 
 python -m risk_assessment.check_agent_types \
     data=kbos.yaml \
+    +data.dataset.config.random_ego=false \
     ckpt=kbos2 \
     +targets_airport=kbos

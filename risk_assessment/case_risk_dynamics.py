@@ -16,10 +16,22 @@ candidates/reality.
 
 Outputs a single JSON (not a plot -- the plot is built from this data
 separately) with:
-    meta: airport, batch_idx, sample_idx, ego_id, ref_agent_idx,
-          ref_agent_type, mode_names, gt_mode, argmax_mode, mode_probs
-    modes: {mode_name: {candidates: [{prob, dist_m: [T_pred floats]}, ...]}}
-    real: {dist_m: [T_pred floats]}
+    meta: airport, batch_idx, sample_idx, scene_file, ego_id, ref_agent_idx,
+          ref_agent_type, mode_names, gt_mode, argmax_mode, hist_len
+    gt: {ego, ref_agent, other_agents: [...]} -- each {agent_idx, agent_type,
+        latlon_hist, latlon_fut, valid_hist, valid_fut} for a map overlay
+        (lat/lon, not the local-XY km frame the risk maths uses -- see
+        _xy_to_latlon)
+    modes: {mode_name: {mode_prob, candidates: [{prob, dist_m: [T_pred
+            floats], latlon: [[lat,lon], ...]}, ...]}}
+    real: {dist_m: [T_pred floats]} (kept for the risk-dynamics chart;
+          redundant with gt.ego's future half but in the ref-agent-distance
+          form that chart wants directly)
+
+The latlon fields are for risk_assessment/case_trajectories_{stgcnn,
+amelia_baseline}.py's map-overlay companion outputs -- see those scripts'
+docstrings for why cross-model trajectory comparison needs lat/lon (a
+shared coordinate frame) rather than each repo's own local-XY frame.
 
 Usage (reuses eval_two_stage.yaml's data/paths/model composition, same as
 find_cases_two_stage.py):
@@ -55,7 +67,9 @@ from amelia_tf.utils import global_masks as G
 from amelia_tf.utils.modes import TURN_MODES
 from amelia_scenes.utils.transform_utils import inv_transform_batch
 
-from risk_assessment.common import to_device, seed_for_reproducible_ego_selection
+from risk_assessment.common import (
+    to_device, seed_for_reproducible_ego_selection, load_airport_ref, xy_array_to_latlon,
+)
 
 MODE_NAMES = TURN_MODES
 AGENT_TYPE_NAMES = {0: "Aircraft", 1: "Vehicle", 2: "Unknown"}
@@ -149,6 +163,8 @@ def main(cfg: DictConfig) -> None:
 
             sequences = scene['sequences']
             agent_masks = scene['agent_masks']
+            agent_types_flat = scene['agent_types'].reshape(sequences.shape[0], -1)
+            scene_files = scene.get('scene_file')
 
             if traj_score is not None:
                 ego_score = separate_ego_agent(traj_score, ego_ids).squeeze(1)
@@ -173,22 +189,50 @@ def main(cfg: DictConfig) -> None:
 
             ref_xy = sequences[b, ref_agent_idx, hist_len:, G.XY].detach().cpu().numpy()  # (T_pred, 2)
             ref_valid = agent_masks[b, ref_agent_idx, hist_len:].bool().detach().cpu().numpy()
-            ref_type = int(scene['agent_types'].reshape(sequences.shape[0], -1)[b, ref_agent_idx].item())
+            ref_type = int(agent_types_flat[b, ref_agent_idx].item())
 
             real_ego_xy = sequences[b, ego_id, hist_len:, G.XY].detach().cpu().numpy()  # (T_pred, 2)
             real_dist = np.linalg.norm(real_ego_xy - ref_xy, axis=-1)
             real_dist = np.where(ref_valid, real_dist, np.nan) * 1000  # km -> m
+
+            airport = airport_ids[b] if airport_ids is not None else None
+            ref = load_airport_ref(cfg.paths.assets_dir, airport)
+
+            def _agent_latlon(a_idx):
+                xy = sequences[b, a_idx, :, G.XY].detach().cpu().numpy()          # (T_total, 2)
+                valid = agent_masks[b, a_idx, :].bool().detach().cpu().numpy()    # (T_total,)
+                xy_masked = np.where(valid[:, None], xy, np.nan)
+                return {
+                    "agent_idx": a_idx,
+                    "agent_type": AGENT_TYPE_NAMES.get(int(agent_types_flat[b, a_idx].item())),
+                    "latlon_hist": xy_array_to_latlon(xy_masked[:hist_len], ref),
+                    "latlon_fut": xy_array_to_latlon(xy_masked[hist_len:], ref),
+                }
+
+            A = sequences.shape[1]
+            gt_out = {
+                "ego": _agent_latlon(ego_id),
+                "ref_agent": _agent_latlon(ref_agent_idx),
+                "other_agents": [
+                    _agent_latlon(a) for a in range(A)
+                    if a not in (ego_id, ref_agent_idx)
+                    and agent_masks[b, a, :].bool().any().item()
+                ],
+            }
 
             M, K = traj_abs.shape[0], traj_abs.shape[1]
             modes_out = {}
             for m in range(M):
                 cands = []
                 for k in range(K):
-                    dist = np.linalg.norm(traj_abs[m, k, b] - ref_xy, axis=-1)
+                    cand_xy = traj_abs[m, k, b]  # (T_pred, 2)
+                    dist = np.linalg.norm(cand_xy - ref_xy, axis=-1)
                     dist = np.where(ref_valid, dist, np.nan) * 1000  # km -> m
+                    cand_xy_masked = np.where(ref_valid[:, None], cand_xy, np.nan)
                     cands.append({
                         "prob": float(cand_probs[b, m, k]),
                         "dist_m": [None if np.isnan(v) else float(v) for v in dist],
+                        "latlon": xy_array_to_latlon(cand_xy_masked, ref),
                     })
                 modes_out[MODE_NAMES[m]] = {
                     "mode_prob": float(ego_probs[b, m].item()),
@@ -197,16 +241,19 @@ def main(cfg: DictConfig) -> None:
 
             out = {
                 "meta": {
-                    "airport": airport_ids[b] if airport_ids is not None else None,
+                    "airport": airport,
                     "batch_idx": batch_idx,
                     "sample_idx": b,
+                    "scene_file": scene_files[b] if scene_files is not None else None,
                     "ego_id": ego_id,
                     "ref_agent_idx": ref_agent_idx,
                     "ref_agent_type": AGENT_TYPE_NAMES.get(ref_type, str(ref_type)),
                     "mode_names": MODE_NAMES,
                     "gt_mode": MODE_NAMES[gt_mode] if 0 <= gt_mode < len(MODE_NAMES) else gt_mode,
                     "argmax_mode": MODE_NAMES[argmax_mode],
+                    "hist_len": hist_len,
                 },
+                "gt": gt_out,
                 "modes": modes_out,
                 "real": {"dist_m": [None if np.isnan(v) else float(v) for v in real_dist]},
             }

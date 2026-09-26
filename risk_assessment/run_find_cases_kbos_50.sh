@@ -45,6 +45,7 @@ fi
 
 python -m risk_assessment.find_cases_two_stage \
     ckpt=kbos2 \
+    +data.dataset.config.random_ego=false \
     data=kbos.yaml \
     mode_ckpt_path='${ckpt_dir}/${type}/${ckpt}/mode_model/${ckpt}_twophases_50.ckpt' \
     traj_ckpt_path='${ckpt_dir}/${type}/${ckpt}/traj_model/${ckpt}_twophases_1_50.ckpt' \
