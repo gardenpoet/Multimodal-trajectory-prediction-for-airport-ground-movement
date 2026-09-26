@@ -194,6 +194,7 @@ def main(cfg: DictConfig) -> None:
                 for b in range(mu.shape[0])
             ]
             airport_ids = scene.get('airport_id')
+            scene_files = scene.get('scene_file')
 
             ego_pred_scores = separate_ego_agent(pred_scores, ego_ids).squeeze(1)  # (B, H)
             ego_mu = separate_ego_agent(mu, ego_ids).squeeze(1)                    # (B, T_total, H, D)
@@ -280,6 +281,13 @@ def main(cfg: DictConfig) -> None:
                     "airport": airport_ids[b] if airport_ids is not None else None,
                     "batch_idx": batch_idx,
                     "sample_idx": b,
+                    # Stable, repo-independent scene identifier -- see
+                    # amelia_dataset.py's __getitem__ comment. batch_idx/
+                    # sample_idx alone are NOT comparable across model repos
+                    # (independently-populated proc_full_scenes/ copies have
+                    # no guaranteed os.listdir order), so use this for
+                    # cross-model case alignment instead.
+                    "scene_file": scene_files[b] if scene_files is not None else None,
                     # see find_cases_two_stage.py's row dict comment: ego agent
                     # selection can be randomised per-sample and isn't
                     # guaranteed reproducible across reruns, so record the

@@ -95,7 +95,7 @@ class AmeliaDataset(BaseDataset):
 
         input_dict = {}
         for key, val_list in key_to_list.items():
-            if key in ['scenario_id', 'airport_id', 'ego_agent_id', 'ego_agent_id_test', 'num_agents']:
+            if key in ['scenario_id', 'airport_id', 'ego_agent_id', 'ego_agent_id_test', 'num_agents', 'scene_file']:
                 input_dict[key] = np.asarray(val_list)
             elif key in ['sequences', 'rel_sequences']:
                 val_list = [torch.from_numpy(x) for x in val_list]
@@ -305,7 +305,8 @@ class AmeliaDataset(BaseDataset):
         )
         return semantic_map, adjacency
 
-    def transform_scene_data(self, scene_data: Dict, random_ego: bool = True, ego_agent_id: int = 0) -> Dict:
+    def transform_scene_data(self, scene_data: Dict, random_ego: bool = True, ego_agent_id: int = 0,
+                              scene_file: str = None) -> Dict:
         """ Transforms scene's global data to the ego-agent's reference frame. """
         MODE_MAP = {
             "TurnLeft_Accel":   0,
@@ -425,6 +426,7 @@ class AmeliaDataset(BaseDataset):
         return {
             'scenario_id':       scene_data['scenario_id'],
             'airport_id':        airport_id,
+            'scene_file':        scene_file,
             'agent_ids':         scene_data['agent_ids'],
             'agent_types':       agent_types,
             'agent_masks':       agent_masks,
@@ -506,4 +508,12 @@ class AmeliaDataset(BaseDataset):
         item = self.scenario_list[index]
         with open(str(item), 'rb') as f:
             data = pickle.load(f)
-        return self.transform_scene_data(data)
+        # Stable, repo-independent scene identifier for cross-model case
+        # alignment: os.listdir() (see data_utils.get_filtered_list) has no
+        # guaranteed order, so batch_idx/sample_idx from two independently-
+        # populated proc_full_scenes/ copies are NOT comparable across model
+        # repos even with identical seeding -- this relative path (airport/
+        # day-folder/filename, stripped of the repo-specific prefix) is,
+        # since it identifies the underlying raw scene file itself.
+        scene_file = os.path.relpath(str(item), self.in_data_dir)
+        return self.transform_scene_data(data, scene_file=scene_file)

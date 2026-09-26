@@ -229,6 +229,7 @@ def main(cfg: DictConfig) -> None:
                 for b in range(mode_probs.shape[0])
             ]
             airport_ids = scene.get('airport_id')
+            scene_files = scene.get('scene_file')
 
             rule_based = scene.get('rule_based_encoding')
             true_mode_idx = rule_based[..., :4].float().argmax(dim=-1).long()  # (B, A)
@@ -368,6 +369,13 @@ def main(cfg: DictConfig) -> None:
                     "airport": airport_ids[b] if airport_ids is not None else None,
                     "batch_idx": batch_idx,
                     "sample_idx": b,
+                    # Stable, repo-independent scene identifier -- see
+                    # amelia_dataset.py's __getitem__ comment. batch_idx/
+                    # sample_idx alone are NOT comparable across model repos
+                    # (independently-populated proc_full_scenes/ copies have
+                    # no guaranteed os.listdir order), so use this for
+                    # cross-model case alignment instead.
+                    "scene_file": scene_files[b] if scene_files is not None else None,
                     # ego agent selection can be randomised per-sample (see
                     # amelia_dataset.py's transform_scene_data, random_ego) and
                     # isn't guaranteed reproducible across reruns (worker/
