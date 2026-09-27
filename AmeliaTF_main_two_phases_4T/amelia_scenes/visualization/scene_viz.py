@@ -53,8 +53,9 @@ def plot_scene(
     to_scale = kwargs.get('to_scale', False)
     if scene_type == 'simple':
         agents = [] if kwargs.get('agents_interest') is None else kwargs.get('agents_interest')
+        crop = kwargs.get('crop')
         plot_scene_simple(scene, assets, filename, dpi, reproject=reproject, agents_interest=agents,
-                          to_scale=to_scale)
+                          to_scale=to_scale, crop=crop)
     elif scene_type == 'benchmark':
         benchmark = scene['benchmark']
         bench.plot_scene_benchmark(scene, assets, benchmark, filename, dpi, reproject=reproject)
@@ -104,9 +105,21 @@ def plot_scene(
 
 def plot_scene_simple(
     scene: dict, assets: Tuple, filename: str = 'temp.png', dpi=600, agents_interest: list = [],
-    reproject: bool = False, projection: str = 'EPSG:3857', to_scale: bool = False
+    reproject: bool = False, projection: str = 'EPSG:3857', to_scale: bool = False,
+    crop: Tuple = None
 ) -> None:
-    """ Visualize simple scenes """
+    """ Visualize simple scenes.
+
+    crop[Tuple]: optional (west, east, south, north) to zoom the final axes
+        to a local area -- without this, the view always spans the WHOLE
+        airport's limits (from load_assets()), which for one small
+        near-miss encounter renders the background essentially invisible
+        (alpha=0.3 over a huge area) and shrinks each agent icon (a FIXED
+        pixel size via OffsetImage's zoom, so it covers less and less of
+        the visible map as the view gets bigger) down to a barely-visible
+        speck. This only changes the axes limits after plotting -- the
+        airport-scale background image and all agent icons are unaffected.
+    """
     bkg, hold_lines, graph_nx, limits, agents = assets
     limits, ref_data = limits
     north, east, south, west, z_min, z_max = limits
@@ -126,6 +139,10 @@ def plot_scene_simple(
         agents_interest=agents_interest,
         reproject=reproject,
         projection=projection)
+    if crop is not None:
+        crop_west, crop_east, crop_south, crop_north = crop
+        ax.set_xlim(crop_west, crop_east)
+        ax.set_ylim(crop_south, crop_north)
     C.save(ax, filename, dpi)  # , limits=[west, east, south, north])
 
 

@@ -29,6 +29,7 @@ Usage:
         --max_sep_km 0.05
 """
 import argparse
+import math
 import os
 import pickle
 import sys
@@ -51,6 +52,7 @@ os.environ.setdefault("PROJECT_ROOT", _TWO_STAGE_REPO)
 
 from amelia_scenes.visualization import scene_viz
 from amelia_scenes.utils.dataset import load_assets
+from amelia_scenes.utils import global_masks as G
 
 # configs/data/default.yaml's sampling_strategy/k_agents -- the subsetting
 # amelia_dataset.py's transform_scene_data applies before assigning ego_id,
@@ -59,6 +61,15 @@ from amelia_scenes.utils.dataset import load_assets
 AGENT_ORDER_STRATEGY = "critical"
 K_AGENTS = 5
 
+# plot_scene_simple always draws at the WHOLE airport's extent by default --
+# fine for a multi-agent traffic overview, but it makes one small near-miss
+# encounter's background and agent icons (a FIXED pixel size, independent of
+# the axes' zoom) shrink down to an imperceptible speck. crop zooms the
+# final axes to just the ego agent's own track + this much padding, which
+# is enough to keep whatever it comes close to in frame too (near-miss
+# candidates are already filtered to well under this by construction).
+CROP_PAD_M = 200.0
+
 _ASSET_CACHE = {}
 
 
@@ -66,6 +77,23 @@ def _get_assets(base_dir, airport):
     if airport not in _ASSET_CACHE:
         _ASSET_CACHE[airport] = load_assets(base_dir, airport)
     return _ASSET_CACHE[airport]
+
+
+def _compute_crop(scene, real_ego_id):
+    """(west, east, south, north) around the ego agent's own valid
+    (Heading, Lat, Lon) timesteps, padded by CROP_PAD_M metres."""
+    seq = scene["agent_sequences"][real_ego_id][:, G.HLL]
+    mask = scene["agent_masks"][real_ego_id].astype(bool)
+    valid = seq[mask]
+    if valid.shape[0] == 0:
+        return None
+    lat, lon = valid[:, 1], valid[:, 2]
+    min_lat, max_lat = float(lat.min()), float(lat.max())
+    min_lon, max_lon = float(lon.min()), float(lon.max())
+    mid_lat = (min_lat + max_lat) / 2.0
+    pad_lat = CROP_PAD_M / 111320.0
+    pad_lon = CROP_PAD_M / (111320.0 * math.cos(math.radians(mid_lat)))
+    return (min_lon - pad_lon, max_lon + pad_lon, min_lat - pad_lat, max_lat + pad_lat)
 
 
 def main():
@@ -118,13 +146,14 @@ def main():
                 scene = pickle.load(f)
             agents_in_scene = scene["meta"]["agent_order"][AGENT_ORDER_STRATEGY][:K_AGENTS]
             real_ego_id = int(agents_in_scene[int(row["ego_id"])])
+            crop = _compute_crop(scene, real_ego_id)
 
             sep_m = row["true_min_sep_gt"] * 1000.0
             tag = f"b{row['batch_idx']}_s{row['sample_idx']}_sep{sep_m:.1f}m"
             filename = os.path.join(args.out_dir, f"{args.airport}_{tag}.png")
             scene_viz.plot_scene(
                 scene, assets, filename, scene_type="simple",
-                agents_interest=[real_ego_id], dpi=args.dpi)
+                agents_interest=[real_ego_id], dpi=args.dpi, crop=crop)
             n_ok += 1
         except Exception as e:
             n_fail += 1
