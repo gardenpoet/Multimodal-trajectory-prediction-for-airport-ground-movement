@@ -1,11 +1,13 @@
 #!/bin/bash
-# Case-study deep dive for KMSY's confirmed candidate (batch=2708, sample=36,
-# ego_id=0, ref agent idx=1), 1T checkpoint (1 candidate per mode, 4 total
-# hypotheses -- no score head, K=1 so cand_probs is trivially 1.0 per mode).
-# Same batch_idx/sample_idx as the 4T run: 1T/2T/4T are different checkpoints
-# of the SAME repo/config (AmeliaTF_main_two_phases_4T, data=kmsy.yaml), so
-# the scene ordering is identical -- unlike a cross-repo comparison (see
-# get_scene_files.py), no scene_file lookup is needed here.
+# Case-study deep dive for KMSY's confirmed candidate (batch=292, sample=46,
+# ego_id=0, ref agent auto-detected), 1T checkpoint (1 candidate per mode, 4
+# total hypotheses -- no score head, K=1 so cand_probs is trivially 1.0 per
+# mode). Same batch_idx/sample_idx as the 4T run: 1T/2T/4T are different
+# checkpoints of the SAME repo/config (AmeliaTF_main_two_phases_4T,
+# data=kmsy.yaml), so the scene ordering is identical -- unlike a cross-repo
+# comparison, no scene_file lookup is needed here. Re-selected 2026-09-27
+# after the ego-selection determinism fix invalidated the original
+# (2708,36) candidate.
 #
 # Run from the repo root:
 #   sbatch risk_assessment/run_case_risk_dynamics_kmsy_1T.sh
@@ -31,7 +33,7 @@ module load cuda/12.2.2-gcc-12.2.0
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export HYDRA_FULL_ERROR=1
 
-OUT_JSON="/gpfs/scratch/exy064/ljx/Risk-Assessment/risk_assessment/out/kmsy_case_2708_36_dynamics_1T.json"
+OUT_JSON="/gpfs/scratch/exy064/ljx/Risk-Assessment/risk_assessment/out/kmsy_case_292_46_dynamics_1T.json"
 mkdir -p "$(dirname "$OUT_JSON")"
 
 python -m risk_assessment.case_risk_dynamics \
@@ -41,5 +43,5 @@ python -m risk_assessment.case_risk_dynamics \
     mode_ckpt_path='${ckpt_dir}/${type}/${ckpt}/mode_model/${ckpt}_twophases_50.ckpt' \
     traj_ckpt_path='${ckpt_dir}/${type}/${ckpt}/traj_model/${ckpt}_twophases_1_50.ckpt' \
     model.traj_net.config.num_hypotheses=1 \
-    +case_batch_idx=2708 +case_sample_idx=36 +case_ref_agent_idx=1 \
+    +case_batch_idx=292 +case_sample_idx=46 \
     +output_json="$OUT_JSON"

@@ -1,18 +1,15 @@
 #!/bin/bash
-# Case-study deep dive for KMSY's confirmed candidate (batch=292, sample=46,
-# ego_id=0, ref agent auto-detected), 2T checkpoint (2 candidates per mode, 8
-# total hypotheses). Same batch_idx/sample_idx as the 4T/1T runs -- see
-# run_case_risk_dynamics_kmsy_1T.sh's comment for why no scene_file lookup
-# is needed here (same repo/config, just a different checkpoint). Re-
-# selected 2026-09-27 after the ego-selection determinism fix invalidated
-# the original (2708,36) candidate.
+# Case-study deep dive for KBOS's confirmed candidate (batch=103, sample=47,
+# ego_id=0, ref agent auto-detected), 2T checkpoint (2 candidates per mode,
+# 8 total hypotheses). See run_case_risk_dynamics_kbos_1T.sh for the case
+# rationale.
 #
 # Run from the repo root:
-#   sbatch risk_assessment/run_case_risk_dynamics_kmsy_2T.sh
+#   sbatch risk_assessment/run_case_risk_dynamics_kbos_2T.sh
 
-#SBATCH --job-name=case_risk_dynamics_kmsy_2T
-#SBATCH --output=risk_assessment/case_risk_dynamics_kmsy_2T_%j.out
-#SBATCH --error=risk_assessment/case_risk_dynamics_kmsy_2T_%j.err
+#SBATCH --job-name=case_risk_dynamics_kbos_2T
+#SBATCH --output=risk_assessment/case_risk_dynamics_kbos_2T_%j.out
+#SBATCH --error=risk_assessment/case_risk_dynamics_kbos_2T_%j.err
 
 #SBATCH --partition=andrena
 #SBATCH --account=pilot_andrena
@@ -31,13 +28,13 @@ module load cuda/12.2.2-gcc-12.2.0
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export HYDRA_FULL_ERROR=1
 
-OUT_JSON="/gpfs/scratch/exy064/ljx/Risk-Assessment/risk_assessment/out/kmsy_case_292_46_dynamics_2T.json"
+OUT_JSON="/gpfs/scratch/exy064/ljx/Risk-Assessment/risk_assessment/out/kbos_case_103_47_dynamics_2T.json"
 mkdir -p "$(dirname "$OUT_JSON")"
 
 python -m risk_assessment.case_risk_dynamics \
-    ckpt=kmsy2 \
+    ckpt=kbos2 \
     +data.dataset.config.random_ego=false \
-    data=kmsy.yaml \
+    data=kbos.yaml \
     mode_ckpt_path='${ckpt_dir}/${type}/${ckpt}/mode_model/${ckpt}_twophases_50.ckpt' \
     traj_ckpt_path='${ckpt_dir}/${type}/${ckpt}/traj_model/${ckpt}_twophases_2_50.ckpt' \
     model.traj_net.config.num_hypotheses=2 \
@@ -45,5 +42,5 @@ python -m risk_assessment.case_risk_dynamics \
     +model.traj_net.config.decoder.score_mode=5 \
     +model.traj_net.config.decoder.score_head_type=attention \
     +scorer.score_head_load='/gpfs/scratch/exy064/ljx/Risk-Assessment/AmeliaTF_main_two_phases_4T/out/${ckpt}/per_mode_scorer_hard_2T.pt' \
-    +case_batch_idx=292 +case_sample_idx=46 \
+    +case_batch_idx=103 +case_sample_idx=47 \
     +output_json="$OUT_JSON"
