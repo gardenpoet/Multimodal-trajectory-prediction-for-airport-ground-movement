@@ -32,6 +32,7 @@ mkdir -p "$(dirname "$OUT_JSON")"
 
 python -m risk_assessment.case_trajectories_stgcnn \
     --config-name=train_stgcnn_klax \
+    +data.dataset.config.random_ego=false \
     train=false \
     'ckpt_path=/gpfs/scratch/exy064/ljx/Risk-Assessment/STGCNN_baseline/out/logs/train/runs/2026-09-17_18-23-16/checkpoints/epoch_176.ckpt' \
     +case_scene_file=klax/KLAX_169_1683482400/000396_n-9.pkl \

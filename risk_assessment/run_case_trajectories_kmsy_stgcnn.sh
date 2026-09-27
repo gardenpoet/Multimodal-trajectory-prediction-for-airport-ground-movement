@@ -32,6 +32,7 @@ mkdir -p "$(dirname "$OUT_JSON")"
 
 python -m risk_assessment.case_trajectories_stgcnn \
     --config-name=train_stgcnn_kmsy \
+    +data.dataset.config.random_ego=false \
     train=false \
     'ckpt_path=/gpfs/scratch/exy064/ljx/Risk-Assessment/STGCNN_baseline/out/logs/train/runs/2026-09-17_18-22-39/checkpoints/epoch_110.ckpt' \
     +case_scene_file=kmsy/KMSY_190_1688763600/001683_n-4.pkl \

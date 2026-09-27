@@ -34,5 +34,6 @@ mkdir -p "$(dirname "$OUT_JSON")"
 
 python -m risk_assessment.case_trajectories_amelia_baseline \
     --config-name=eval_kbos \
+    +data.dataset.config.random_ego=false \
     +case_scene_file=kbos/KBOS_148_1673060400/002462_n-7.pkl \
     +output_json="$OUT_JSON"

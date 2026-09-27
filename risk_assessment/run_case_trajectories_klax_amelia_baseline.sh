@@ -33,5 +33,6 @@ mkdir -p "$(dirname "$OUT_JSON")"
 
 python -m risk_assessment.case_trajectories_amelia_baseline \
     --config-name=eval_klax \
+    +data.dataset.config.random_ego=false \
     +case_scene_file=klax/KLAX_169_1683482400/000396_n-9.pkl \
     +output_json="$OUT_JSON"
