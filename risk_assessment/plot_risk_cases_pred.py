@@ -72,11 +72,20 @@ from risk_assessment.common import (
 
 MODE_NAMES = TURN_MODES
 # Same validated categorical palette used in the interactive artifact --
-# fixed hue per mode, not cycled.
+# fixed hue per mode, not cycled. Keyed by the PIPELINE's mode name (see
+# MODE_DISPLAY below for the display-only left/right correction).
 MODE_COLORS = {
     "TurnLeft": "#2a78d6", "TurnRight": "#eb6834",
     "Straight": "#1baf7a", "Hold": "#8a5fbf",
 }
+# scene_processor.py's turn-mode labels are swapped relative to true
+# compass left/right (positive cumulative bearing change -- a physical
+# RIGHT turn -- gets labelled "TurnLeft"; see this session's artifact fix
+# for the full derivation). Correcting the DISPLAY TEXT only here, same as
+# the interactive artifact's dispMode() -- data keys/MODE_COLORS above are
+# unaffected, only what's drawn in the title/legend.
+MODE_DISPLAY = {"TurnLeft": "TurnRight", "TurnRight": "TurnLeft",
+                "Straight": "Straight", "Hold": "Hold"}
 
 _ASSET_CACHE = {}
 
@@ -160,43 +169,71 @@ def _plot_case(out_path, airport, assets, ego_hist_ll, ego_fut_ll, other_agents_
     fig, ax = plt.subplots()
     ax.imshow(bkg_draw, zorder=0, extent=extent_draw, alpha=0.3)
 
-    def _plot_track(hist_ll, fut_ll, color, lw, icon_zoom_scale=None):
+    def _plot_track(hist_ll, fut_ll, color, lw, hist_alpha=0.6, fut_alpha=1.0,
+                     icon_zoom_scale=None, icon_alpha=1.0, icon_recolor=None):
         hist_pts = [p for p in hist_ll if p is not None]
         fut_pts = [p for p in fut_ll if p is not None]
         if hist_pts:
             hp = np.array(hist_pts)
-            ax.plot(hp[:, 1], hp[:, 0], color=color, lw=lw, ls='dashed', alpha=0.6)
+            ax.plot(hp[:, 1], hp[:, 0], color=color, lw=lw, ls='dashed', alpha=hist_alpha)
         bridged = ([hist_pts[-1]] + fut_pts) if hist_pts else fut_pts
         if bridged:
             bp = np.array(bridged)
-            ax.plot(bp[:, 1], bp[:, 0], color=color, lw=lw, ls='solid', alpha=1.0)
+            ax.plot(bp[:, 1], bp[:, 0], color=color, lw=lw, ls='solid', alpha=fut_alpha)
         if icon_zoom_scale and (hist_pts or fut_pts):
             anchor = hist_pts[-1] if hist_pts else fut_pts[0]
             heading_pts = hist_pts if len(hist_pts) >= 2 else (hist_pts + fut_pts)
             heading = _bearing(heading_pts[-2], heading_pts[-1]) if len(heading_pts) >= 2 else 0.0
             icon = agent_icons[C.AIRCRAFT]
             img = C.plot_agent(icon, heading, zoom=C.ZOOM[C.AIRCRAFT] * icon_zoom_scale,
-                                native_bearing=C.AIRCRAFT_NOSE_BEARING)
+                                alpha=icon_alpha, native_bearing=C.AIRCRAFT_NOSE_BEARING,
+                                recolor=icon_recolor)
             from matplotlib.offsetbox import AnnotationBbox
             ab = AnnotationBbox(img, (anchor[1], anchor[0]), frameon=False)
             ax.add_artist(ab)
 
+    # Ego's own GT track is context for the predictions, not the thing being
+    # compared -- kept visually recessive (grey, matched to the predictions'
+    # own line-width range, lower alpha) so the coloured mode candidates
+    # (the actual point of this plot) aren't competing with a bold black line.
+    EGO_GRAY = "#707070"
+    PRED_LW_MIN, PRED_LW_RANGE = 1.2, 1.8  # matches the per-candidate lw formula below
+
+    other_agent_color = C.MOTION_COLORS['other_agent'][0]
     for hist_ll, fut_ll in other_agents_ll:
-        _plot_track(hist_ll, fut_ll, C.MOTION_COLORS['other_agent'][0], 1.0)
+        _plot_track(hist_ll, fut_ll, other_agent_color, 1.0)
+
+    used_modes = []
     for mode_name, mode_info in modes_out.items():
         if not mode_info["feasible"]:
             continue
+        used_modes.append(mode_name)
         color = MODE_COLORS.get(mode_name, "#888888")
         for cand in sorted(mode_info["candidates"], key=lambda c: c["prob"]):
             pts = [p for p in cand["latlon"] if p is not None]
             if not pts:
                 continue
             arr = np.array(pts)
-            ax.plot(arr[:, 1], arr[:, 0], color=color, lw=1.2 + cand["prob"] * 1.8,
+            ax.plot(arr[:, 1], arr[:, 0], color=color, lw=PRED_LW_MIN + cand["prob"] * PRED_LW_RANGE,
                     alpha=0.25 + 0.65 * cand["prob"])
-    _plot_track(ego_hist_ll, ego_fut_ll, "#000000", 2.2, icon_zoom_scale=15.0)
 
-    title = f"{airport.upper()}  gt={gt_mode}  argmax={argmax_mode}"
+    _plot_track(ego_hist_ll, ego_fut_ll, EGO_GRAY, PRED_LW_MIN + PRED_LW_RANGE / 2,
+                hist_alpha=0.35, fut_alpha=0.55, icon_zoom_scale=15.0,
+                icon_alpha=0.6, icon_recolor=(128, 128, 128))
+
+    from matplotlib.lines import Line2D
+    legend_handles = [
+        Line2D([0], [0], color=EGO_GRAY, lw=2, label="Ego (GT, hist dashed/fut solid)"),
+        Line2D([0], [0], color=other_agent_color, lw=1.5, label="Other agents (GT)"),
+    ]
+    for mode_name in used_modes:
+        legend_handles.append(Line2D(
+            [0], [0], color=MODE_COLORS.get(mode_name, "#888888"), lw=2.5,
+            label=f"{MODE_DISPLAY.get(mode_name, mode_name)} candidates (opacity ∝ prob.)"))
+    ax.legend(handles=legend_handles, loc="upper right", fontsize=6, framealpha=0.85)
+
+    title = (f"{airport.upper()}  gt={MODE_DISPLAY.get(gt_mode, gt_mode)}  "
+             f"argmax={MODE_DISPLAY.get(argmax_mode, argmax_mode)}")
     ax.set_title(title, fontsize=9)
     ax.set_xlim(crop_west, crop_east)
     ax.set_ylim(crop_south, crop_north)

@@ -135,8 +135,13 @@ def norm(arr, method: str = 'minmax'):
     return arr
 
 
-def plot_agent(asset, heading, zoom=0.015, alpha=1.0, native_bearing=None):
-    """native_bearing[float]: the asset's own nose direction (compass
+def plot_agent(asset, heading, zoom=0.015, alpha=1.0, native_bearing=None, recolor=None):
+    """recolor[Tuple]: optional (r, g, b), 0-255 -- replaces the asset's own
+    RGB (keeping its existing alpha channel, so the silhouette shape is
+    unaffected) with a flat colour, e.g. to de-emphasise an icon (grey)
+    without touching the shared per-type default appearance elsewhere.
+
+    native_bearing[float]: the asset's own nose direction (compass
     bearing, degrees) when drawn with no rotation at all -- when given,
     rotates with PIL instead of the scipy.ndimage.rotate()+np.fliplr()
     combination below, which was never actually calibrated against a
@@ -157,6 +162,11 @@ def plot_agent(asset, heading, zoom=0.015, alpha=1.0, native_bearing=None):
         # img = ndimage.rotate(asset, heading, reshape=False, order=3, mode='nearest')
         img = ndimage.rotate(asset, heading)
         img = np.fliplr(img)
+    if recolor is not None and img.shape[-1] >= 3:
+        img = img.copy()
+        img[..., 0] = recolor[0]
+        img[..., 1] = recolor[1]
+        img[..., 2] = recolor[2]
     img = OffsetImage(img, zoom=zoom, alpha=alpha)
     return img
 
