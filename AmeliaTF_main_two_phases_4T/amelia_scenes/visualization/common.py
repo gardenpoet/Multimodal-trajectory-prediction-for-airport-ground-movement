@@ -303,10 +303,29 @@ def plot_sequences(
         if traj.shape[0] == 0:
             continue
 
-        # Get heading at last point of trajectory history.
-        heading = traj[-1, 0]
         traj_ll = reproject_sequences(traj[:, 1:], projection) if reproject else traj[:, 1:]
-        lon, lat = traj_ll[-1, 1], traj_ll[-1, 0]
+
+        # Icon anchor: at the hist/future BOUNDARY (current position/heading)
+        # when hist_len is given -- not the end of the whole (hist+future)
+        # track, which is where this put it before hist_len existed at all
+        # and made the icon look like it belonged at the far end of the
+        # future, not "now". Falls back to the plain last-point placement
+        # (previous behaviour, unaffected) when hist_len isn't supplied.
+        hist_ll = fut_ll = None
+        if hist_len is not None:
+            # Split on the RAW (pre-mask) time axis, not `traj`/`traj_ll`
+            # (already compacted to valid-only rows, so a plain [:hist_len]
+            # slice there wouldn't line up with the actual history window).
+            hist_pts = trajectory[:hist_len][mask[:hist_len]]
+            fut_pts = trajectory[hist_len:][mask[hist_len:]]
+            hist_ll = reproject_sequences(hist_pts[:, 1:], projection) if reproject else hist_pts[:, 1:]
+            fut_ll = reproject_sequences(fut_pts[:, 1:], projection) if reproject else fut_pts[:, 1:]
+            boundary_pts, boundary_ll = (hist_pts, hist_ll) if hist_pts.shape[0] > 0 else (fut_pts, fut_ll)
+            heading = boundary_pts[-1, 0]
+            lon, lat = boundary_ll[-1, 1], boundary_ll[-1, 0]
+        else:
+            heading = traj[-1, 0]
+            lon, lat = traj_ll[-1, 1], traj_ll[-1, 0]
         if lon == 0 or lat == 0:
             continue
 
@@ -315,7 +334,7 @@ def plot_sequences(
         alpha = 1.0 if valid else 0.3
         traj_ls = 'solid' if valid and mask.sum() == seq_len else 'dotted'
 
-        # Place plane on last point of ground truth sequence.
+        # Place plane on the icon anchor computed above.
         # ZOOM[agent_type] (e.g. 0.015 for AIRCRAFT) renders a ~3px icon
         # from a ~200px source asset -- effectively invisible at any dpi,
         # independent of the axes' data-coordinate zoom (OffsetImage's
@@ -336,13 +355,6 @@ def plot_sequences(
         if hist_len is None:
             ax.plot(traj_ll[:, 1], traj_ll[:, 0], color=traj_color, lw=traj_lw, ls=traj_ls, alpha=alpha)
         else:
-            # Split on the RAW (pre-mask) time axis, not `traj`/`traj_ll`
-            # (already compacted to valid-only rows, so a plain [:hist_len]
-            # slice there wouldn't line up with the actual history window).
-            hist_pts = trajectory[:hist_len][mask[:hist_len]]
-            fut_pts = trajectory[hist_len:][mask[hist_len:]]
-            hist_ll = reproject_sequences(hist_pts[:, 1:], projection) if reproject else hist_pts[:, 1:]
-            fut_ll = reproject_sequences(fut_pts[:, 1:], projection) if reproject else fut_pts[:, 1:]
             if hist_ll.shape[0] > 0:
                 ax.plot(hist_ll[:, 1], hist_ll[:, 0], color=traj_color, lw=traj_lw,
                         ls='dashed', alpha=alpha * 0.7)
