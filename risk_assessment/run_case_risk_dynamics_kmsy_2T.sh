@@ -1,11 +1,11 @@
 #!/bin/bash
-# Case-study deep dive for KMSY's confirmed candidate (batch=292, sample=46,
+# Case-study deep dive for KMSY's confirmed candidate (batch=18, sample=27,
 # ego_id=0, ref agent auto-detected), 2T checkpoint (2 candidates per mode, 8
 # total hypotheses). Same batch_idx/sample_idx as the 4T/1T runs -- see
 # run_case_risk_dynamics_kmsy_1T.sh's comment for why no scene_file lookup
-# is needed here (same repo/config, just a different checkpoint). Re-
-# selected 2026-09-27 after the ego-selection determinism fix invalidated
-# the original (2708,36) candidate.
+# is needed here (same repo/config, just a different checkpoint), and for
+# the 2026-09-27 re-selection rationale (legibility, not the earlier
+# (292,46)/(2708,36) candidates).
 #
 # Run from the repo root:
 #   sbatch risk_assessment/run_case_risk_dynamics_kmsy_2T.sh
@@ -31,7 +31,7 @@ module load cuda/12.2.2-gcc-12.2.0
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export HYDRA_FULL_ERROR=1
 
-OUT_JSON="/gpfs/scratch/exy064/ljx/Risk-Assessment/risk_assessment/out/kmsy_case_292_46_dynamics_2T.json"
+OUT_JSON="/gpfs/scratch/exy064/ljx/Risk-Assessment/risk_assessment/out/kmsy_case_18_27_dynamics_2T.json"
 mkdir -p "$(dirname "$OUT_JSON")"
 
 python -m risk_assessment.case_risk_dynamics \
@@ -45,5 +45,5 @@ python -m risk_assessment.case_risk_dynamics \
     +model.traj_net.config.decoder.score_mode=5 \
     +model.traj_net.config.decoder.score_head_type=attention \
     +scorer.score_head_load='/gpfs/scratch/exy064/ljx/Risk-Assessment/AmeliaTF_main_two_phases_4T/out/${ckpt}/per_mode_scorer_hard_2T.pt' \
-    +case_batch_idx=292 +case_sample_idx=46 \
+    +case_batch_idx=18 +case_sample_idx=27 \
     +output_json="$OUT_JSON"

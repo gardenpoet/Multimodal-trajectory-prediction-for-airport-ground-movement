@@ -1,5 +1,5 @@
 #!/bin/bash
-# Case-study deep dive for KBOS's confirmed candidate (batch=103, sample=47,
+# Case-study deep dive for KBOS's confirmed candidate (batch=379, sample=45,
 # ego_id=0, ref agent auto-detected), 2T checkpoint (2 candidates per mode,
 # 8 total hypotheses). See run_case_risk_dynamics_kbos_1T.sh for the case
 # rationale.
@@ -28,7 +28,7 @@ module load cuda/12.2.2-gcc-12.2.0
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export HYDRA_FULL_ERROR=1
 
-OUT_JSON="/gpfs/scratch/exy064/ljx/Risk-Assessment/risk_assessment/out/kbos_case_103_47_dynamics_2T.json"
+OUT_JSON="/gpfs/scratch/exy064/ljx/Risk-Assessment/risk_assessment/out/kbos_case_379_45_dynamics_2T.json"
 mkdir -p "$(dirname "$OUT_JSON")"
 
 python -m risk_assessment.case_risk_dynamics \
@@ -42,5 +42,5 @@ python -m risk_assessment.case_risk_dynamics \
     +model.traj_net.config.decoder.score_mode=5 \
     +model.traj_net.config.decoder.score_head_type=attention \
     +scorer.score_head_load='/gpfs/scratch/exy064/ljx/Risk-Assessment/AmeliaTF_main_two_phases_4T/out/${ckpt}/per_mode_scorer_hard_2T.pt' \
-    +case_batch_idx=103 +case_sample_idx=47 \
+    +case_batch_idx=379 +case_sample_idx=45 \
     +output_json="$OUT_JSON"

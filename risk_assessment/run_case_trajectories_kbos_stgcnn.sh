@@ -1,8 +1,10 @@
 #!/bin/bash
 # Cross-model trajectory dump for KBOS's confirmed candidate
-# (scene_file=kbos/KBOS_148_1673060400/002462_n-7.pkl), STGCNN_baseline.
-# Scans the FULL test set (scene_file's position in this repo's own batch
-# ordering isn't known in advance) -- give it ample time.
+# (scene_file=kbos/KBOS_356_1673820000/000428_n-12.pkl), STGCNN_baseline.
+# Re-selected 2026-09-27 for case-study legibility -- see
+# run_case_risk_dynamics_kbos_1T.sh's comment. Scans the FULL test set
+# (scene_file's position in this repo's own batch ordering isn't known in
+# advance) -- give it ample time.
 #
 # Run from the repo root:
 #   sbatch risk_assessment/run_case_trajectories_kbos_stgcnn.sh
@@ -28,7 +30,7 @@ module load cuda/12.2.2-gcc-12.2.0
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export HYDRA_FULL_ERROR=1
 
-OUT_JSON="/gpfs/scratch/exy064/ljx/Risk-Assessment/risk_assessment/out/kbos_case_103_47_trajectories_stgcnn.json"
+OUT_JSON="/gpfs/scratch/exy064/ljx/Risk-Assessment/risk_assessment/out/kbos_case_379_45_trajectories_stgcnn.json"
 mkdir -p "$(dirname "$OUT_JSON")"
 
 python -m risk_assessment.case_trajectories_stgcnn \
@@ -36,5 +38,5 @@ python -m risk_assessment.case_trajectories_stgcnn \
     +data.dataset.config.random_ego=false \
     train=false \
     'ckpt_path=/gpfs/scratch/exy064/ljx/Risk-Assessment/STGCNN_baseline/out/logs/train/runs/2026-09-17_18-23-16/checkpoints/epoch_185.ckpt' \
-    +case_scene_file=kbos/KBOS_148_1673060400/002462_n-7.pkl \
+    +case_scene_file=kbos/KBOS_356_1673820000/000428_n-12.pkl \
     +output_json="$OUT_JSON"

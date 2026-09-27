@@ -1,8 +1,9 @@
 #!/bin/bash
 # Cross-model trajectory dump for KLAX's confirmed candidate
-# (scene_file=klax/KLAX_169_1683482400/000396_n-9.pkl), AmeliaTF_main
-# (plain, non-manoeuvre-conditioned) baseline. Scans the FULL test set --
-# give it ample time.
+# (scene_file=klax/KLAX_455_1684537200/003475_n-8.pkl), AmeliaTF_main
+# (plain, non-manoeuvre-conditioned) baseline. Re-selected 2026-09-27 for
+# case-study legibility -- see run_case_risk_dynamics_klax_1T.sh's comment.
+# Scans the FULL test set -- give it ample time.
 #
 # Run from the repo root:
 #   sbatch risk_assessment/run_case_trajectories_klax_amelia_baseline.sh
@@ -28,11 +29,11 @@ module load cuda/12.2.2-gcc-12.2.0
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export HYDRA_FULL_ERROR=1
 
-OUT_JSON="/gpfs/scratch/exy064/ljx/Risk-Assessment/risk_assessment/out/klax_case_317_74_trajectories_amelia_baseline.json"
+OUT_JSON="/gpfs/scratch/exy064/ljx/Risk-Assessment/risk_assessment/out/klax_case_65_41_trajectories_amelia_baseline.json"
 mkdir -p "$(dirname "$OUT_JSON")"
 
 python -m risk_assessment.case_trajectories_amelia_baseline \
     --config-name=eval_klax \
     +data.dataset.config.random_ego=false \
-    +case_scene_file=klax/KLAX_169_1683482400/000396_n-9.pkl \
+    +case_scene_file=klax/KLAX_455_1684537200/003475_n-8.pkl \
     +output_json="$OUT_JSON"

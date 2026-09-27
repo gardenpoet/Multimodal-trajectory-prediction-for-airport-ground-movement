@@ -1,9 +1,11 @@
 #!/bin/bash
 # Cross-model trajectory dump for KBOS's confirmed candidate
-# (scene_file=kbos/KBOS_148_1673060400/002462_n-7.pkl), AmeliaTF_main
-# (plain, non-manoeuvre-conditioned) baseline. Scans the FULL test set --
-# give it ample time. ckpt_path comes from configs/eval_kbos.yaml's own
-# default (same as run_find_cases_kbos_50_amelia_baseline.sh).
+# (scene_file=kbos/KBOS_356_1673820000/000428_n-12.pkl), AmeliaTF_main
+# (plain, non-manoeuvre-conditioned) baseline. Re-selected 2026-09-27 for
+# case-study legibility -- see run_case_risk_dynamics_kbos_1T.sh's comment.
+# Scans the FULL test set -- give it ample time. ckpt_path comes from
+# configs/eval_kbos.yaml's own default (same as
+# run_find_cases_kbos_50_amelia_baseline.sh).
 #
 # Run from the repo root:
 #   sbatch risk_assessment/run_case_trajectories_kbos_amelia_baseline.sh
@@ -29,11 +31,11 @@ module load cuda/12.2.2-gcc-12.2.0
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export HYDRA_FULL_ERROR=1
 
-OUT_JSON="/gpfs/scratch/exy064/ljx/Risk-Assessment/risk_assessment/out/kbos_case_103_47_trajectories_amelia_baseline.json"
+OUT_JSON="/gpfs/scratch/exy064/ljx/Risk-Assessment/risk_assessment/out/kbos_case_379_45_trajectories_amelia_baseline.json"
 mkdir -p "$(dirname "$OUT_JSON")"
 
 python -m risk_assessment.case_trajectories_amelia_baseline \
     --config-name=eval_kbos \
     +data.dataset.config.random_ego=false \
-    +case_scene_file=kbos/KBOS_148_1673060400/002462_n-7.pkl \
+    +case_scene_file=kbos/KBOS_356_1673820000/000428_n-12.pkl \
     +output_json="$OUT_JSON"

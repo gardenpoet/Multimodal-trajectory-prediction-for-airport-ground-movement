@@ -1,10 +1,13 @@
 #!/bin/bash
-# Case-study deep dive for KBOS's confirmed candidate (batch=103, sample=47,
-# ego_id=0, ref agent auto-detected -- predicted (7.94m) and realized (2.12m)
+# Case-study deep dive for KBOS's confirmed candidate (batch=379, sample=45,
+# ego_id=0, ref agent auto-detected -- predicted (3.57m) and realized (4.26m)
 # separation agree it's a genuine close approach, Aircraft-Aircraft, on the
-# movement-area network; ALSO mode_error=True & ambiguous=True, so this case
-# doubles as the "gating matters" illustration). 1T checkpoint (1 candidate
-# per mode, 4 total hypotheses -- no score head).
+# movement-area network, mode predicted correctly (TurnRight)). Re-selected
+# 2026-09-27: the original (103,47) candidate's realized ego trajectory
+# zig-zagged (raw position noise dominating at low taxi speed) and made a
+# poor case-study plot; this one has straightness=0.93, hist displacement
+# =37.5m -- see rank_candidates.py. 1T checkpoint (1 candidate per mode, 4
+# total hypotheses -- no score head).
 #
 # Run from the repo root:
 #   sbatch risk_assessment/run_case_risk_dynamics_kbos_1T.sh
@@ -30,7 +33,7 @@ module load cuda/12.2.2-gcc-12.2.0
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export HYDRA_FULL_ERROR=1
 
-OUT_JSON="/gpfs/scratch/exy064/ljx/Risk-Assessment/risk_assessment/out/kbos_case_103_47_dynamics_1T.json"
+OUT_JSON="/gpfs/scratch/exy064/ljx/Risk-Assessment/risk_assessment/out/kbos_case_379_45_dynamics_1T.json"
 mkdir -p "$(dirname "$OUT_JSON")"
 
 python -m risk_assessment.case_risk_dynamics \
@@ -40,5 +43,5 @@ python -m risk_assessment.case_risk_dynamics \
     mode_ckpt_path='${ckpt_dir}/${type}/${ckpt}/mode_model/${ckpt}_twophases_50.ckpt' \
     traj_ckpt_path='${ckpt_dir}/${type}/${ckpt}/traj_model/${ckpt}_twophases_1_50.ckpt' \
     model.traj_net.config.num_hypotheses=1 \
-    +case_batch_idx=103 +case_sample_idx=47 \
+    +case_batch_idx=379 +case_sample_idx=45 \
     +output_json="$OUT_JSON"

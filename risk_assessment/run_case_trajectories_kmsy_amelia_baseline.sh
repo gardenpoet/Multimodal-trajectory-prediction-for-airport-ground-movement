@@ -1,8 +1,9 @@
 #!/bin/bash
 # Cross-model trajectory dump for KMSY's confirmed candidate
-# (scene_file=kmsy/KMSY_190_1688763600/001683_n-4.pkl), AmeliaTF_main
-# (plain, non-manoeuvre-conditioned) baseline. Scans the FULL test set --
-# give it ample time.
+# (scene_file=kmsy/KMSY_455_1689728400/001003_n-5.pkl), AmeliaTF_main
+# (plain, non-manoeuvre-conditioned) baseline. Re-selected 2026-09-27 for
+# case-study legibility -- see run_case_risk_dynamics_kmsy_1T.sh's comment.
+# Scans the FULL test set -- give it ample time.
 #
 # Run from the repo root:
 #   sbatch risk_assessment/run_case_trajectories_kmsy_amelia_baseline.sh
@@ -28,11 +29,11 @@ module load cuda/12.2.2-gcc-12.2.0
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export HYDRA_FULL_ERROR=1
 
-OUT_JSON="/gpfs/scratch/exy064/ljx/Risk-Assessment/risk_assessment/out/kmsy_case_292_46_trajectories_amelia_baseline.json"
+OUT_JSON="/gpfs/scratch/exy064/ljx/Risk-Assessment/risk_assessment/out/kmsy_case_18_27_trajectories_amelia_baseline.json"
 mkdir -p "$(dirname "$OUT_JSON")"
 
 python -m risk_assessment.case_trajectories_amelia_baseline \
     --config-name=eval_kmsy \
     +data.dataset.config.random_ego=false \
-    +case_scene_file=kmsy/KMSY_190_1688763600/001683_n-4.pkl \
+    +case_scene_file=kmsy/KMSY_455_1689728400/001003_n-5.pkl \
     +output_json="$OUT_JSON"
