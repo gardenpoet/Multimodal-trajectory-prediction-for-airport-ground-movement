@@ -14,8 +14,10 @@ rationale) to an existing CSV by looking up each row's scene_file once and
 reading its ego ground-truth trajectory directly out of the dataloader --
 skipping model instantiation/checkpoint loading/GPU forward entirely, which
 is what made the original find_cases_*.py runs slow. Also drop
-+data.dataset.config.add_context=false (below) since context-map generation
-is pure per-scene CPU overhead this script has no use for.
+data.dataset.config.add_context=false (below, NO + prefix -- add_context
+already has a default in configs/data/default.yaml, so this OVERRIDES it
+rather than adding a new key) since context-map generation is pure
+per-scene CPU overhead this script has no use for.
 
 Usage (reuses AmeliaTF_main_two_phases_4T's config exactly like
 find_cases_two_stage.py does, so the same data=/paths= overrides apply --
@@ -25,7 +27,7 @@ scene_file already in it is guaranteed to be encountered while scanning):
     python -m risk_assessment.rank_candidates \\
         data=kbos.yaml \\
         +data.dataset.config.random_ego=false \\
-        +data.dataset.config.add_context=false \\
+        data.dataset.config.add_context=false \\
         +input_csv=/gpfs/scratch/exy064/ljx/Risk-Assessment/risk_assessment/out/kbos_50_4T_cases.csv \\
         +output_csv=/gpfs/scratch/exy064/ljx/Risk-Assessment/risk_assessment/out/kbos_50_4T_cases_ranked.csv \\
         +limit_batches=390

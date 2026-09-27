@@ -35,7 +35,7 @@ python -m risk_assessment.rank_candidates \
     ckpt=kmsy2 \
     data=kmsy.yaml \
     +data.dataset.config.random_ego=false \
-    +data.dataset.config.add_context=false \
+    data.dataset.config.add_context=false \
     +input_csv="$IN_CSV" \
     +output_csv="$OUT_CSV" \
     +limit_batches=340
