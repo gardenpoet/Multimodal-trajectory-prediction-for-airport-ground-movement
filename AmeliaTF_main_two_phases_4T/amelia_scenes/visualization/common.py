@@ -104,6 +104,16 @@ AGENT_COLORS = {
 
 LL_TO_KNOTS = 1000 * 111 * 1.94384
 
+# ac.png's native nose direction, measured directly (extremal-pixel method,
+# NOT PCA/principal-axis -- see the risk_assessment session's
+# icon_orientation_calibration note: PCA gets thrown off by a swept-wing
+# silhouette's pixel mass and was confidently wrong by ~270 degrees the
+# first time this exact asset was calibrated for a different renderer).
+# Confirmed: the single leftmost opaque pixel (the nose tip) sits at
+# almost exactly the vertical centre of the bounding box -- nose points
+# due WEST, compass bearing 270.
+AIRCRAFT_NOSE_BEARING = 270
+
 # -------------------------------------------------------------------------------------------------#
 #                                      COMMON PLOT UTILS                                           #
 # -------------------------------------------------------------------------------------------------#
@@ -125,11 +135,28 @@ def norm(arr, method: str = 'minmax'):
     return arr
 
 
-def plot_agent(asset, heading, zoom=0.015, alpha=1.0):
-    # Use reshape=False to avoid deformation and preserve the original shape
-    # img = ndimage.rotate(asset, heading, reshape=False, order=3, mode='nearest')
-    img = ndimage.rotate(asset, heading)
-    img = np.fliplr(img)
+def plot_agent(asset, heading, zoom=0.015, alpha=1.0, native_bearing=None):
+    """native_bearing[float]: the asset's own nose direction (compass
+    bearing, degrees) when drawn with no rotation at all -- when given,
+    rotates with PIL instead of the scipy.ndimage.rotate()+np.fliplr()
+    combination below, which was never actually calibrated against a
+    known heading (rotate()'s CW/CCW sign convention plus a subsequent
+    mirror flip is exactly the kind of compound transform the
+    icon-orientation lesson warns about reasoning through instead of
+    measuring). PIL's Image.rotate(angle) is unambiguously
+    counter-clockwise for positive angle; the needed CCW rotation from
+    native_bearing to the true compass heading is (native_bearing -
+    heading) mod 360.
+    """
+    if native_bearing is not None:
+        pil_img = Image.fromarray(asset)
+        angle = (native_bearing - heading) % 360
+        img = np.array(pil_img.rotate(angle, expand=True, resample=Image.BICUBIC))
+    else:
+        # Use reshape=False to avoid deformation and preserve the original shape
+        # img = ndimage.rotate(asset, heading, reshape=False, order=3, mode='nearest')
+        img = ndimage.rotate(asset, heading)
+        img = np.fliplr(img)
     img = OffsetImage(img, zoom=zoom, alpha=alpha)
     return img
 
@@ -245,8 +272,14 @@ def save(
 
 def plot_sequences(
     ax, scene: dict, agents: dict, agents_interest: list = [], halo_values: list = [],
-    reproject: bool = False, projection: str = 'EPSG:3857', icon_zoom_scale: float = 1.0
+    reproject: bool = False, projection: str = 'EPSG:3857', icon_zoom_scale: float = 1.0,
+    hist_len: int = None
 ) -> None:
+    """hist_len[int]: when given, draws each agent's history (index
+    [:hist_len] of the RAW, not-yet-mask-compacted sequence) dashed and its
+    future ([hist_len:]) in the usual style, bridged at the boundary for
+    visual continuity -- default None draws the whole (masked) sequence in
+    one style, as before."""
     agent_sequences, agent_masks = scene['agent_sequences'][:, :, G.HLL], scene['agent_masks']
     agent_types, agent_ids, agent_valid = scene['agent_types'], scene['agent_ids'], scene['agent_valid']
 
@@ -291,14 +324,32 @@ def plot_sequences(
         # that need the icon to actually show up; default 1.0 keeps this
         # identical to the original whole-airport-view behaviour.
         icon = agents[agent_type]
-        img = plot_agent(icon, heading, zoom=ZOOM[agent_type] * icon_zoom_scale, alpha=alpha)
+        native_bearing = AIRCRAFT_NOSE_BEARING if agent_type == AIRCRAFT else None
+        img = plot_agent(icon, heading, zoom=ZOOM[agent_type] * icon_zoom_scale, alpha=alpha,
+                          native_bearing=native_bearing)
         if agent_id in agents_interest:
             alpha = agents_plot[agent_id]
             ax.scatter(lon, lat, color='#FF5A4C', alpha=alpha, s=160)
         ab = AnnotationBbox(img, (lon, lat), frameon=False)
         ax.add_artist(ab)
 
-        ax.plot(traj_ll[:, 1], traj_ll[:, 0], color=traj_color, lw=traj_lw, ls=traj_ls, alpha=alpha)
+        if hist_len is None:
+            ax.plot(traj_ll[:, 1], traj_ll[:, 0], color=traj_color, lw=traj_lw, ls=traj_ls, alpha=alpha)
+        else:
+            # Split on the RAW (pre-mask) time axis, not `traj`/`traj_ll`
+            # (already compacted to valid-only rows, so a plain [:hist_len]
+            # slice there wouldn't line up with the actual history window).
+            hist_pts = trajectory[:hist_len][mask[:hist_len]]
+            fut_pts = trajectory[hist_len:][mask[hist_len:]]
+            hist_ll = reproject_sequences(hist_pts[:, 1:], projection) if reproject else hist_pts[:, 1:]
+            fut_ll = reproject_sequences(fut_pts[:, 1:], projection) if reproject else fut_pts[:, 1:]
+            if hist_ll.shape[0] > 0:
+                ax.plot(hist_ll[:, 1], hist_ll[:, 0], color=traj_color, lw=traj_lw,
+                        ls='dashed', alpha=alpha * 0.7)
+            fut_bridged = np.concatenate([hist_ll[-1:], fut_ll], axis=0) if hist_ll.shape[0] > 0 else fut_ll
+            if fut_bridged.shape[0] > 0:
+                ax.plot(fut_bridged[:, 1], fut_bridged[:, 0], color=traj_color, lw=traj_lw,
+                        ls=traj_ls, alpha=alpha)
         # ax.text(traj_ll[0, 1], traj_ll[0, 0], f"{agent_id}")
 
 

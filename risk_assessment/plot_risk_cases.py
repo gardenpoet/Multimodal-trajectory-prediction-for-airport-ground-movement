@@ -60,6 +60,12 @@ from amelia_scenes.utils import global_masks as G
 # resolves to the correct physical agent index in the full raw scene.
 AGENT_ORDER_STRATEGY = "critical"
 K_AGENTS = 5
+# configs/data/default.yaml's hist_len -- used to draw history dashed vs
+# future solid; the raw scene .pkl has no hist_len field of its own (that's
+# only added later, by the batched/collated dataloader dict), so this has
+# to be supplied from the same known config value everything else here
+# already relies on.
+HIST_LEN = 10
 
 # plot_scene_simple always draws at the WHOLE airport's extent by default --
 # fine for a multi-agent traffic overview, but it makes one small near-miss
@@ -160,7 +166,7 @@ def main():
             scene_viz.plot_scene(
                 scene, assets, filename, scene_type="simple",
                 agents_interest=[real_ego_id], dpi=args.dpi, crop=crop,
-                icon_zoom_scale=args.icon_zoom_scale)
+                icon_zoom_scale=args.icon_zoom_scale, hist_len=HIST_LEN)
             n_ok += 1
         except Exception as e:
             n_fail += 1

@@ -55,8 +55,10 @@ def plot_scene(
         agents = [] if kwargs.get('agents_interest') is None else kwargs.get('agents_interest')
         crop = kwargs.get('crop')
         icon_zoom_scale = kwargs.get('icon_zoom_scale', 1.0)
+        hist_len = kwargs.get('hist_len')
         plot_scene_simple(scene, assets, filename, dpi, reproject=reproject, agents_interest=agents,
-                          to_scale=to_scale, crop=crop, icon_zoom_scale=icon_zoom_scale)
+                          to_scale=to_scale, crop=crop, icon_zoom_scale=icon_zoom_scale,
+                          hist_len=hist_len)
     elif scene_type == 'benchmark':
         benchmark = scene['benchmark']
         bench.plot_scene_benchmark(scene, assets, benchmark, filename, dpi, reproject=reproject)
@@ -107,7 +109,7 @@ def plot_scene(
 def plot_scene_simple(
     scene: dict, assets: Tuple, filename: str = 'temp.png', dpi=600, agents_interest: list = [],
     reproject: bool = False, projection: str = 'EPSG:3857', to_scale: bool = False,
-    crop: Tuple = None, icon_zoom_scale: float = 1.0
+    crop: Tuple = None, icon_zoom_scale: float = 1.0, hist_len: int = None
 ) -> None:
     """ Visualize simple scenes.
 
@@ -164,7 +166,8 @@ def plot_scene_simple(
         agents_interest=agents_interest,
         reproject=reproject,
         projection=projection,
-        icon_zoom_scale=icon_zoom_scale)
+        icon_zoom_scale=icon_zoom_scale,
+        hist_len=hist_len)
     if crop is not None:
         crop_west, crop_east, crop_south, crop_north = crop
         ax.set_xlim(crop_west, crop_east)
