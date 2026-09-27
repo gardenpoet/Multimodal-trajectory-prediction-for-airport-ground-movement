@@ -118,6 +118,12 @@ def main():
         help="Cap the number of scenes plotted -- sanity-check with a small "
              "number (e.g. 3) before doing a full run.")
     ap.add_argument("--dpi", type=int, default=150)
+    ap.add_argument(
+        "--icon_zoom_scale", type=float, default=15.0,
+        help="Multiplier on top of amelia_scenes' default per-type icon "
+             "zoom (e.g. 0.015 for Aircraft), which renders a ~3px icon "
+             "from a ~200px source asset -- invisible on its own. Tune "
+             "this after looking at the first few outputs.")
     args = ap.parse_args()
 
     in_data_dir = args.in_data_dir or os.path.join(
@@ -153,7 +159,8 @@ def main():
             filename = os.path.join(args.out_dir, f"{args.airport}_{tag}.png")
             scene_viz.plot_scene(
                 scene, assets, filename, scene_type="simple",
-                agents_interest=[real_ego_id], dpi=args.dpi, crop=crop)
+                agents_interest=[real_ego_id], dpi=args.dpi, crop=crop,
+                icon_zoom_scale=args.icon_zoom_scale)
             n_ok += 1
         except Exception as e:
             n_fail += 1

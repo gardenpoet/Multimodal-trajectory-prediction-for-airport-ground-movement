@@ -245,7 +245,7 @@ def save(
 
 def plot_sequences(
     ax, scene: dict, agents: dict, agents_interest: list = [], halo_values: list = [],
-    reproject: bool = False, projection: str = 'EPSG:3857'
+    reproject: bool = False, projection: str = 'EPSG:3857', icon_zoom_scale: float = 1.0
 ) -> None:
     agent_sequences, agent_masks = scene['agent_sequences'][:, :, G.HLL], scene['agent_masks']
     agent_types, agent_ids, agent_valid = scene['agent_types'], scene['agent_ids'], scene['agent_valid']
@@ -282,9 +282,16 @@ def plot_sequences(
         alpha = 1.0 if valid else 0.3
         traj_ls = 'solid' if valid and mask.sum() == seq_len else 'dotted'
 
-        # Place plane on last point of ground truth sequence
+        # Place plane on last point of ground truth sequence.
+        # ZOOM[agent_type] (e.g. 0.015 for AIRCRAFT) renders a ~3px icon
+        # from a ~200px source asset -- effectively invisible at any dpi,
+        # independent of the axes' data-coordinate zoom (OffsetImage's
+        # zoom is a fixed screen/pixel scale). icon_zoom_scale is an
+        # additional multiplier for callers (e.g. a cropped close-up view)
+        # that need the icon to actually show up; default 1.0 keeps this
+        # identical to the original whole-airport-view behaviour.
         icon = agents[agent_type]
-        img = plot_agent(icon, heading, zoom=ZOOM[agent_type], alpha=alpha)
+        img = plot_agent(icon, heading, zoom=ZOOM[agent_type] * icon_zoom_scale, alpha=alpha)
         if agent_id in agents_interest:
             alpha = agents_plot[agent_id]
             ax.scatter(lon, lat, color='#FF5A4C', alpha=alpha, s=160)

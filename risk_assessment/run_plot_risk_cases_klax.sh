@@ -7,6 +7,8 @@
 #
 # Sanity-check first with a couple of scenes:
 #   sbatch --export=ALL,LIMIT=3 risk_assessment/run_plot_risk_cases_klax.sh
+# Tune icon size if needed (default 15x amelia_scenes' own tiny default):
+#   sbatch --export=ALL,LIMIT=3,ICON_ZOOM=25 risk_assessment/run_plot_risk_cases_klax.sh
 # Then the full run:
 #   sbatch risk_assessment/run_plot_risk_cases_klax.sh
 
@@ -30,9 +32,11 @@ OUT_DIR="/gpfs/scratch/exy064/ljx/Risk-Assessment/risk_assessment/out/case_scree
 
 LIMIT_ARG=""
 if [ -n "$LIMIT" ]; then LIMIT_ARG="--limit $LIMIT"; fi
+ICON_ZOOM_ARG=""
+if [ -n "$ICON_ZOOM" ]; then ICON_ZOOM_ARG="--icon_zoom_scale $ICON_ZOOM"; fi
 
 python -m risk_assessment.plot_risk_cases \
     --input_csv "$IN_CSV" \
     --out_dir "$OUT_DIR" \
     --airport klax \
-    $LIMIT_ARG
+    $LIMIT_ARG $ICON_ZOOM_ARG
