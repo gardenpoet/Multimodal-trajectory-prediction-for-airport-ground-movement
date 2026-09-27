@@ -110,15 +110,20 @@ def plot_scene_simple(
 ) -> None:
     """ Visualize simple scenes.
 
-    crop[Tuple]: optional (west, east, south, north) to zoom the final axes
-        to a local area -- without this, the view always spans the WHOLE
-        airport's limits (from load_assets()), which for one small
-        near-miss encounter renders the background essentially invisible
-        (alpha=0.3 over a huge area) and shrinks each agent icon (a FIXED
-        pixel size via OffsetImage's zoom, so it covers less and less of
-        the visible map as the view gets bigger) down to a barely-visible
-        speck. This only changes the axes limits after plotting -- the
-        airport-scale background image and all agent icons are unaffected.
+    crop[Tuple]: optional (west, east, south, north) to zoom to a local
+        area -- without this, the view always spans the WHOLE airport's
+        limits (from load_assets()), which for one small near-miss
+        encounter renders the background essentially invisible (alpha=0.3
+        over a huge area) and shrinks each agent icon (a FIXED pixel size
+        via OffsetImage's zoom, so it covers less and less of the visible
+        map as the view gets bigger) down to a barely-visible speck. This
+        crops the background RASTER ITSELF to the requested extent (not
+        just the axes' view range) -- just calling ax.set_xlim/ylim on the
+        full-airport image left bbox_inches='tight' (in C.save()) computing
+        a bounding box that still mostly matched the original whole-image
+        render, i.e. a small map lost in a mostly-blank saved figure.
+        Cropping the array directly guarantees the saved figure IS the
+        local area.
     """
     bkg, hold_lines, graph_nx, limits, agents = assets
     limits, ref_data = limits
@@ -129,10 +134,29 @@ def plot_scene_simple(
     if to_scale:
         C.agents_to_scale(agents, limits)
 
+    bkg_draw, extent_draw = bkg, [west, east, south, north]
+    if crop is not None:
+        crop_west, crop_east, crop_south, crop_north = crop
+        img_h, img_w = bkg.shape[0], bkg.shape[1]
+
+        def _lat_to_row(lat):
+            return int(round((north - lat) / (north - south) * img_h))
+
+        def _lon_to_col(lon):
+            return int(round((lon - west) / (east - west) * img_w))
+
+        r0, r1 = sorted([_lat_to_row(crop_north), _lat_to_row(crop_south)])
+        c0, c1 = sorted([_lon_to_col(crop_west), _lon_to_col(crop_east)])
+        r0, r1 = max(0, r0), min(img_h, r1)
+        c0, c1 = max(0, c0), min(img_w, c1)
+        if r1 > r0 and c1 > c0:
+            bkg_draw = bkg[r0:r1, c0:c1]
+            extent_draw = [crop_west, crop_east, crop_south, crop_north]
+
     fig, ax = plt.subplots()
 
     # Plots airport map as background
-    ax.imshow(bkg, zorder=0, extent=[west, east, south, north], alpha=0.3)
+    ax.imshow(bkg_draw, zorder=0, extent=extent_draw, alpha=0.3)
     # Plots all agent sequences
     C.plot_sequences(
         ax, scene, agents,
