@@ -14,6 +14,16 @@ the same question: "how close does ego's candidate/real trajectory get to
 THAT SPECIFIC other agent, second by second" -- comparable across modes/
 candidates/reality.
 
+The reference agent is AUTO-DETECTED as whichever agent achieved the
+closest approach in the REALIZED (ground-truth) trajectory -- i.e. the
+same agent find_cases_two_stage.py's true_min_sep_gt_agent_type column
+already identifies the type of, just resolved here to its raw agent index
+(not persisted in that CSV, since the index isn't stable/meaningful outside
+one script's own run). This is the physically real "other aircraft"
+involved in the case, so it's the right fixed reference regardless of
+which mode/candidate curve is being examined. Pass +case_ref_agent_idx= to
+override (e.g. to inspect a different agent's proximity for the same case).
+
 Outputs a single JSON (not a plot -- the plot is built from this data
 separately) with:
     meta: airport, batch_idx, sample_idx, scene_file, ego_id, ref_agent_idx,
@@ -22,8 +32,11 @@ separately) with:
         latlon_hist, latlon_fut, valid_hist, valid_fut} for a map overlay
         (lat/lon, not the local-XY km frame the risk maths uses -- see
         _xy_to_latlon)
-    modes: {mode_name: {mode_prob, candidates: [{prob, dist_m: [T_pred
-            floats], latlon: [[lat,lon], ...]}, ...]}}
+    modes: {mode_name: {mode_prob, feasible (bool -- same turn_feasibility
+            mask risk_gated restricts its max to; an infeasible mode's
+            candidates have no physical meaning and should be omitted from
+            the chart), candidates: [{prob, dist_m: [T_pred floats],
+            latlon: [[lat,lon], ...]}, ...]}}
     real: {dist_m: [T_pred floats]} (kept for the risk-dynamics chart;
           redundant with gt.ego's future half but in the ref-agent-distance
           form that chart wants directly)
@@ -34,15 +47,15 @@ docstrings for why cross-model trajectory comparison needs lat/lon (a
 shared coordinate frame) rather than each repo's own local-XY frame.
 
 Usage (reuses eval_two_stage.yaml's data/paths/model composition, same as
-find_cases_two_stage.py):
+find_cases_two_stage.py; case_ref_agent_idx is optional, see above):
 
     python -m risk_assessment.case_risk_dynamics \\
         ckpt=kmsy2 data=kmsy.yaml \\
         mode_ckpt_path='${ckpt_dir}/${type}/${ckpt}/mode_model/${ckpt}_twophases_50.ckpt' \\
         traj_ckpt_path='${ckpt_dir}/${type}/${ckpt}/traj_model/${ckpt}_twophases_4_50.ckpt' \\
         model.traj_net.config.num_hypotheses=4 \\
-        +case_batch_idx=2708 +case_sample_idx=36 +case_ref_agent_idx=1 \\
-        +output_json=/gpfs/scratch/exy064/ljx/Risk-Assessment/out/risk_assessment/kmsy_case_2708_36_dynamics.json
+        +case_batch_idx=292 +case_sample_idx=46 \\
+        +output_json=/gpfs/scratch/exy064/ljx/Risk-Assessment/risk_assessment/out/kmsy_case_292_46_dynamics_4T.json
 """
 import json
 import os
@@ -103,10 +116,14 @@ def main(cfg: DictConfig) -> None:
         raise ValueError("Pass +output_json=/path/to/case_dynamics.json")
     target_batch = cfg.get("case_batch_idx")
     target_sample = cfg.get("case_sample_idx")
-    ref_agent_idx = cfg.get("case_ref_agent_idx")
-    if target_batch is None or target_sample is None or ref_agent_idx is None:
-        raise ValueError("Pass +case_batch_idx=, +case_sample_idx=, +case_ref_agent_idx=")
-    target_batch, target_sample, ref_agent_idx = int(target_batch), int(target_sample), int(ref_agent_idx)
+    if target_batch is None or target_sample is None:
+        raise ValueError("Pass +case_batch_idx=, +case_sample_idx=")
+    target_batch, target_sample = int(target_batch), int(target_sample)
+    # None (not set) means auto-detect from the realized trajectory below --
+    # see the module docstring for why that's the right default reference.
+    ref_agent_idx_override = cfg.get("case_ref_agent_idx")
+    ref_agent_idx_override = (
+        int(ref_agent_idx_override) if ref_agent_idx_override is not None else None)
 
     mode_net, traj_net, device = _build_nets(cfg)
 
@@ -161,6 +178,17 @@ def main(cfg: DictConfig) -> None:
             ego_probs = separate_ego_agent(mode_probs, ego_ids).squeeze(1)      # (B, M)
             ego_mu = separate_ego_agent(traj_mu, ego_ids).squeeze(1)            # (B, T_total, M, K, D)
 
+            # Which modes are geometrically feasible for this scene (same
+            # mask risk_gated restricts its max to in find_cases_two_stage.py)
+            # -- an infeasible mode's "prediction" is a candidate with no
+            # physical meaning and shouldn't be shown alongside real ones.
+            feasibility = scene.get('turn_feasibility', None)
+            if feasibility is not None:
+                ego_feas = separate_ego_agent(feasibility, ego_ids).squeeze(1)  # (B, M)
+                ego_feas = ego_feas.bool().cpu().numpy()
+            else:
+                ego_feas = np.ones(ego_probs.shape, dtype=bool)
+
             sequences = scene['sequences']
             agent_masks = scene['agent_masks']
             agent_types_flat = scene['agent_types'].reshape(sequences.shape[0], -1)
@@ -187,11 +215,41 @@ def main(cfg: DictConfig) -> None:
             gt_mode = int(ego_true_mode[b].item())
             argmax_mode = int(ego_probs[b].argmax().item())
 
+            real_ego_xy = sequences[b, ego_id, hist_len:, G.XY].detach().cpu().numpy()  # (T_pred, 2)
+
+            if ref_agent_idx_override is not None:
+                ref_agent_idx = ref_agent_idx_override
+            else:
+                # Auto-detect: whichever agent achieved the closest approach
+                # in the REALIZED trajectory (same quantity
+                # find_cases_two_stage.py's true_min_sep_gt_agent_type
+                # identifies the type of, resolved here to its raw index).
+                A_total = sequences.shape[1]
+                other_idx, other_xy, other_valid = [], [], []
+                for a in range(A_total):
+                    if a == ego_id:
+                        continue
+                    valid_a = agent_masks[b, a, hist_len:].bool().detach().cpu().numpy()
+                    if not valid_a.any():
+                        continue
+                    other_idx.append(a)
+                    other_xy.append(sequences[b, a, hist_len:, G.XY].detach().cpu().numpy())
+                    other_valid.append(valid_a)
+                if not other_idx:
+                    raise RuntimeError(
+                        f"No valid other agent in batch={target_batch} sample={target_sample} "
+                        "to auto-detect a reference agent from.")
+                other_xy_arr = np.stack(other_xy, axis=0)
+                other_valid_arr = np.stack(other_valid, axis=0)
+                dist = np.linalg.norm(other_xy_arr - real_ego_xy[None, :, :], axis=-1)
+                dist = np.where(other_valid_arr, dist, np.inf)
+                agent_i, _t_i = np.unravel_index(np.argmin(dist), dist.shape)
+                ref_agent_idx = other_idx[agent_i]
+
             ref_xy = sequences[b, ref_agent_idx, hist_len:, G.XY].detach().cpu().numpy()  # (T_pred, 2)
             ref_valid = agent_masks[b, ref_agent_idx, hist_len:].bool().detach().cpu().numpy()
             ref_type = int(agent_types_flat[b, ref_agent_idx].item())
 
-            real_ego_xy = sequences[b, ego_id, hist_len:, G.XY].detach().cpu().numpy()  # (T_pred, 2)
             real_dist = np.linalg.norm(real_ego_xy - ref_xy, axis=-1)
             real_dist = np.where(ref_valid, real_dist, np.nan) * 1000  # km -> m
 
@@ -236,6 +294,7 @@ def main(cfg: DictConfig) -> None:
                     })
                 modes_out[MODE_NAMES[m]] = {
                     "mode_prob": float(ego_probs[b, m].item()),
+                    "feasible": bool(ego_feas[b, m]),
                     "candidates": cands,
                 }
 
