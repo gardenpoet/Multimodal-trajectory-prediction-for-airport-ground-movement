@@ -245,8 +245,11 @@ def plot_sequences(
 
     num_agents, seq_len, _ = agent_sequences.shape
     # halo values check
+    # MOTION_COLORS['interest_agent'] is a (color, alpha) tuple; only the
+    # alpha component belongs here (agents_plot below expects a plain
+    # scalar) -- see common.py's identical fix in AmeliaTF_main_two_phases_4T.
     if agents_interest and not halo_values:
-        halo_values = [MOTION_COLORS['interest_agent']] * len(agents_interest)
+        halo_values = [MOTION_COLORS['interest_agent'][1]] * len(agents_interest)
     agents_plot = {agent_id: 1.0-halo_value for agent_id, halo_value in zip(agents_interest, halo_values)}
 
     # Display each trajectory
@@ -292,7 +295,7 @@ def plot_timestep(
     # num_agents, seq_len, _ = agent_sequences.shape
     # # halo values check
     if agents_interest and not halo_values:
-        halo_values = [MOTION_COLORS['interest_agent']] * len(agents_interest)
+        halo_values = [MOTION_COLORS['interest_agent'][1]] * len(agents_interest)
     agents_plot = {agent_id: 1.0-halo_value for agent_id, halo_value in zip(agents_interest, halo_values)}
 
     # Display each agent in the timestep

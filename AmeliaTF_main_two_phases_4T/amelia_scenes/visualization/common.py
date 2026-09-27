@@ -244,9 +244,15 @@ def plot_sequences(
     agent_types, agent_ids, agent_valid = scene['agent_types'], scene['agent_ids'], scene['agent_valid']
 
     num_agents, seq_len, _ = agent_sequences.shape
-    # halo values check
+    # halo values check -- MOTION_COLORS['interest_agent'] is a (color, alpha)
+    # tuple; agents_plot below expects a plain alpha scalar per agent (it's
+    # subtracted from 1.0 and later passed straight to ax.scatter(alpha=...)),
+    # so only the alpha component belongs here. Passing the whole tuple
+    # crashes as soon as agents_interest is non-empty and halo_values isn't
+    # explicitly supplied (1.0 - (color, alpha) -> TypeError) -- this
+    # fallback path had never actually been exercised before.
     if agents_interest and not halo_values:
-        halo_values = [MOTION_COLORS['interest_agent']] * len(agents_interest)
+        halo_values = [MOTION_COLORS['interest_agent'][1]] * len(agents_interest)
     agents_plot = {agent_id: 1.0-halo_value for agent_id, halo_value in zip(agents_interest, halo_values)}
 
     # Display each trajectory
@@ -290,9 +296,10 @@ def plot_timestep(
     # agent_types, agent_ids, agent_valid = scene['agent_types'], scene['agent_ids'], scene['agent_valid']
 
     # num_agents, seq_len, _ = agent_sequences.shape
-    # # halo values check
+    # halo values check -- see plot_sequences()'s identical fix: only the
+    # alpha component of the (color, alpha) tuple belongs here.
     if agents_interest and not halo_values:
-        halo_values = [MOTION_COLORS['interest_agent']] * len(agents_interest)
+        halo_values = [MOTION_COLORS['interest_agent'][1]] * len(agents_interest)
     agents_plot = {agent_id: 1.0-halo_value for agent_id, halo_value in zip(agents_interest, halo_values)}
 
     # Display each agent in the timestep
