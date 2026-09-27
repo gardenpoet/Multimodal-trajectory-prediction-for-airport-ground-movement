@@ -209,7 +209,7 @@ def reproject_sequences(sequence, target_projection):
 
 def save(
     ax, filename: str = "temp.png", dpi: int = 200, clear_ticks: bool = True,
-    force_extent: bool = False, limits: Tuple = None,
+    force_extent: bool = False, limits: Tuple = None, tight: bool = True,
 ) -> None:
     if clear_ticks:
         ax.set_xticks([])
@@ -230,9 +230,16 @@ def save(
     # Remove layout adjustment for speed (optional)
     # plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
 
-    # Save figure directly from the axis' figure for efficiency
+    # Save figure directly from the axis' figure for efficiency.
+    # bbox_inches='tight' expands to fit EVERY artist's rendered extent,
+    # including AnnotationBbox agent icons anchored outside the axes'
+    # current xlim/ylim (they aren't clipped by default) -- for a cropped
+    # local view, a single other agent placed far from the crop window is
+    # enough to blow the saved canvas back out to cover it too, leaving a
+    # small map lost in mostly blank space. tight=False saves the actual
+    # current view as-is instead of auto-fitting to all artists.
     fig = ax.get_figure()
-    fig.savefig(filename, dpi=dpi, bbox_inches='tight', pad_inches=0)
+    fig.savefig(filename, dpi=dpi, bbox_inches=('tight' if tight else None), pad_inches=0)
     plt.close(fig)
 
 

@@ -167,7 +167,10 @@ def plot_scene_simple(
         crop_west, crop_east, crop_south, crop_north = crop
         ax.set_xlim(crop_west, crop_east)
         ax.set_ylim(crop_south, crop_north)
-    C.save(ax, filename, dpi)  # , limits=[west, east, south, north])
+    # tight=False when cropped -- see C.save()'s docstring: bbox_inches=
+    # 'tight' would otherwise re-expand the saved canvas to cover any
+    # other agent icon anchored outside the crop window.
+    C.save(ax, filename, dpi, tight=(crop is None))
 
 
 def plot_scene_gif(
