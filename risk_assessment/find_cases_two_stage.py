@@ -397,6 +397,34 @@ def main(cfg: DictConfig) -> None:
                 true_min_sep, true_closest_type, true_t_idx = min_separation_with_type(
                     real_ego_xy, other_xy_arr, other_valid_arr, other_types_arr)
 
+                # Case-study legibility screen: net displacement (how far the
+                # agent actually got) and straightness (net displacement /
+                # total path walked) over ego's REALIZED history+future.
+                # Neither risk number cares about this, but a case-study
+                # trajectory plot does -- a near-zero-displacement agent
+                # (parked/idle, position noise dominates) or a near-zero-
+                # straightness one (real back-and-forth/reversal, not a
+                # typical single taxi manoeuvre) makes a poor illustration
+                # even when pred-vs-real separation looks clean.
+                hist_ego_mask = agent_masks[b, ego_id, :hist_len].bool().detach().cpu().numpy()
+                hist_ego_xy = sequences[b, ego_id, :hist_len, G.XY].detach().cpu().numpy()[hist_ego_mask]
+                full_ego_mask = np.concatenate([
+                    hist_ego_mask,
+                    agent_masks[b, ego_id, hist_len:].bool().detach().cpu().numpy(),
+                ])
+                full_ego_xy = sequences[b, ego_id, :, G.XY].detach().cpu().numpy()[full_ego_mask]
+
+                def _displacement_and_straightness(xy):
+                    if xy.shape[0] < 2:
+                        return 0.0, 1.0
+                    seg = np.linalg.norm(np.diff(xy, axis=0), axis=1)
+                    path_len = float(seg.sum())
+                    net = float(np.linalg.norm(xy[-1] - xy[0]))
+                    return net, (net / path_len if path_len > 1e-9 else 1.0)
+
+                ego_hist_disp_km, _ = _displacement_and_straightness(hist_ego_xy)
+                ego_full_disp_km, ego_full_straightness = _displacement_and_straightness(full_ego_xy)
+
                 # On/off-road location check (folds in what used to be a
                 # separate check_case_location.py pass) -- see
                 # common.check_on_road's docstring. Checked at the ego's own
@@ -448,6 +476,9 @@ def main(cfg: DictConfig) -> None:
                     "true_min_sep_gt_agent_type": AGENT_TYPE_NAMES.get(true_closest_type),
                     "true_min_sep_gt_on_road": true_on_road,
                     "true_min_sep_gt_edge_dist_m": true_edge_dist,
+                    "ego_hist_displacement_m": ego_hist_disp_km * 1000.0,
+                    "ego_full_displacement_m": ego_full_disp_km * 1000.0,
+                    "ego_track_straightness": ego_full_straightness,
                 }
                 for m in range(M):
                     row[f"min_sep_{MODE_NAMES[m]}"] = (
