@@ -1,8 +1,10 @@
 #!/bin/bash
 # Crops KBOS's real background image (bkg_map.png) to the local area around
-# the confirmed case (batch=103, sample=47) -- see dump_case_background.py's
-# docstring. Pure CPU work (no model), so targets the CPU-only compute
-# partition.
+# the confirmed case (batch=379, sample=45 -- re-selected 2026-09-27 for
+# case-study legibility, see run_case_risk_dynamics_kbos_1T.sh's comment)
+# -- see dump_case_background.py's docstring. Pure CPU work (no model), so
+# targets the CPU-only compute partition. Bounds computed from the new
+# case's own GT extent (ego+ref+other agents, hist+fut) + 250m padding.
 #
 # Run from the repo root:
 #   sbatch risk_assessment/run_dump_case_background_kbos.sh
@@ -28,6 +30,6 @@ mkdir -p "$OUT_DIR"
 python -m risk_assessment.dump_case_background \
     --assets_dir /gpfs/scratch/exy064/ljx/Risk-Assessment/AmeliaTF_main/datasets/amelia/assets \
     --airport kbos \
-    --north 42.375110 --south 42.357192 --east -71.008830 --west -71.021086 \
-    --output_png "$OUT_DIR/kbos_case_103_47_bg.png" \
-    --output_json "$OUT_DIR/kbos_case_103_47_bg.json"
+    --north 42.370120 --south 42.353352 --east -71.004493 --west -71.023325 \
+    --output_png "$OUT_DIR/kbos_case_379_45_bg.png" \
+    --output_json "$OUT_DIR/kbos_case_379_45_bg.json"

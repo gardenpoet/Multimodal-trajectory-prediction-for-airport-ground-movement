@@ -1,7 +1,9 @@
 #!/bin/bash
 # Crops KLAX's real background image (bkg_map.png) to the local area around
-# the confirmed case (batch=317, sample=74). Pure CPU work, compute
-# partition.
+# the confirmed case (batch=65, sample=41 -- re-selected 2026-09-27 for
+# case-study legibility, see run_case_risk_dynamics_klax_1T.sh's comment).
+# Pure CPU work, compute partition. Bounds computed from the new case's own
+# GT extent (ego+ref+other agents, hist+fut) + 250m padding.
 #
 # Run from the repo root:
 #   sbatch risk_assessment/run_dump_case_background_klax.sh
@@ -27,6 +29,6 @@ mkdir -p "$OUT_DIR"
 python -m risk_assessment.dump_case_background \
     --assets_dir /gpfs/scratch/exy064/ljx/Risk-Assessment/AmeliaTF_main/datasets/amelia/assets \
     --airport klax \
-    --north 33.950388 --south 33.936180 --east -118.377638 --west -118.419857 \
-    --output_png "$OUT_DIR/klax_case_317_74_bg.png" \
-    --output_json "$OUT_DIR/klax_case_317_74_bg.json"
+    --north 33.952656 --south 33.934856 --east -118.396359 --west -118.419089 \
+    --output_png "$OUT_DIR/klax_case_65_41_bg.png" \
+    --output_json "$OUT_DIR/klax_case_65_41_bg.json"
