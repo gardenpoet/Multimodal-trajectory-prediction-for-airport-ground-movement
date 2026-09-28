@@ -135,6 +135,36 @@ def min_separation_with_type(ego_traj_abs, other_xy, other_valid, other_types):
     return float(dist[agent_i, t_i]), int(other_types[agent_i]), int(t_i)
 
 
+def resolve_case_scene_file(cfg):
+    """
+    Returns the scene_file for a case_trajectories_*.py cross-model run.
+    Accepts EITHER a direct +case_scene_file=..., or +case_batch_idx=X
+    +case_sample_idx=Y +cases_csv=/path/to/{airport}_*_cases_ranked.csv
+    (the same ranked CSV find_cases_two_stage.py/rank_candidates.py write,
+    with batch_idx/sample_idx/scene_file columns) -- lets a case be named by
+    the two-stage repo's own (batch_idx, sample_idx), which is what a
+    human picks from screenshots, instead of requiring the scene_file to be
+    looked up by hand first.
+    """
+    scene_file = cfg.get("case_scene_file")
+    if scene_file:
+        return scene_file
+    batch_idx = cfg.get("case_batch_idx")
+    sample_idx = cfg.get("case_sample_idx")
+    cases_csv = cfg.get("cases_csv")
+    if batch_idx is None or sample_idx is None or not cases_csv:
+        raise ValueError(
+            "Pass +case_scene_file=<airport>/<day>/<scenario>.pkl, or "
+            "+case_batch_idx=X +case_sample_idx=Y +cases_csv=/path/to/cases_ranked.csv"
+        )
+    import pandas as pd
+    df = pd.read_csv(cases_csv)
+    rows = df[(df["batch_idx"] == int(batch_idx)) & (df["sample_idx"] == int(sample_idx))]
+    if len(rows) == 0:
+        raise ValueError(f"No row with batch_idx={batch_idx} sample_idx={sample_idx} in {cases_csv}")
+    return rows.iloc[0]["scene_file"]
+
+
 def load_airport_ref(assets_dir, airport):
     """
     Returns (ref_lat, ref_lon, range_scale) from assets_dir/{airport}/

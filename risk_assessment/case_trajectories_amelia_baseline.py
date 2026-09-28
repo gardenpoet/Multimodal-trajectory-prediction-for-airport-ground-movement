@@ -31,12 +31,16 @@ shape):
         modes dict)
     real: {dist_m: [T_pred floats]}
 
-Usage (mirrors find_cases_amelia_baseline.py's model-loading convention):
+Usage (mirrors find_cases_amelia_baseline.py's model-loading convention).
+scene_file can be given directly, or resolved from a ranked-candidates CSV
+by batch_idx/sample_idx (see risk_assessment/common.py's
+resolve_case_scene_file):
 
     python -m risk_assessment.case_trajectories_amelia_baseline \\
         --config-name=eval_kmsy \\
         ckpt_path=/gpfs/scratch/exy064/ljx/Risk-Assessment/AmeliaTF_main/datasets/amelia/checkpoints/Single-Airport/kmsy/kmsy_baseline_50.ckpt \\
-        +case_scene_file=kmsy/KMSY_190_1688763600/001683_n-4.pkl \\
+        +case_batch_idx=292 +case_sample_idx=46 \\
+        +cases_csv=/gpfs/scratch/exy064/ljx/Risk-Assessment/risk_assessment/out/kmsy_50_4T_cases_ranked.csv \\
         +output_json=/gpfs/scratch/exy064/ljx/Risk-Assessment/risk_assessment/out/kmsy_case_292_46_trajectories_amelia_baseline.json
 """
 import json
@@ -61,6 +65,7 @@ from amelia_scenes.utils.transform_utils import inv_transform
 
 from risk_assessment.common import (
     to_device, seed_for_reproducible_ego_selection, load_airport_ref, xy_array_to_latlon,
+    resolve_case_scene_file,
 )
 
 AGENT_TYPE_NAMES = {0: "Aircraft", 1: "Vehicle", 2: "Unknown"}
@@ -92,9 +97,7 @@ def main(cfg: DictConfig) -> None:
     output_json = cfg.get("output_json")
     if not output_json:
         raise ValueError("Pass +output_json=/path/to/case_trajectories.json")
-    target_scene_file = cfg.get("case_scene_file")
-    if not target_scene_file:
-        raise ValueError("Pass +case_scene_file=<airport>/<day>/<scenario>.pkl")
+    target_scene_file = resolve_case_scene_file(cfg)
     ckpt_path = cfg.get("ckpt_path")
     if not ckpt_path:
         raise ValueError("Pass ckpt_path=/path/to/checkpoint.ckpt on the command line.")
