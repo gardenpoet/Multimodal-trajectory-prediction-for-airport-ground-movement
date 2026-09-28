@@ -135,6 +135,34 @@ def min_separation_with_type(ego_traj_abs, other_xy, other_valid, other_types):
     return float(dist[agent_i, t_i]), int(other_types[agent_i]), int(t_i)
 
 
+def select_candidates(df, criterion="near_miss", max_sep_km=SAFETY_MARGIN_KM):
+    """
+    Filters+sorts an already-computed find_cases_two_stage.py CSV for bulk
+    case-study screening (plot_risk_cases.py/plot_risk_cases_pred.py). Both
+    criteria require the ego's realized closest-approach agent to be an
+    Aircraft on the movement-area network -- the same legibility gate every
+    case-study candidate needs, regardless of which story it's telling.
+
+    "near_miss" (default): true_min_sep_gt < max_sep_km -- a genuine close
+        REAL approach. Sorted tightest-first.
+    "group_b": gt_mode == argmax_mode (mode predicted correctly) AND
+        risk_naive == 0 (the top/gt-mode prediction is itself safe) AND
+        risk_worst_case > 0 (some OTHER mode/candidate lands inside the
+        safety margin) -- the "risk_worst_case looks beyond the single
+        most-likely prediction" story. Sorted by risk_worst_case
+        descending (the most dramatic worst-case-vs-reality gap first).
+    """
+    base = (df["true_min_sep_gt_agent_type"] == "Aircraft") & (df["true_min_sep_gt_on_road"] == True)
+    if criterion == "near_miss":
+        return df[base & (df["true_min_sep_gt"] < max_sep_km)].sort_values("true_min_sep_gt")
+    if criterion == "group_b":
+        return df[
+            base & (df["gt_mode"] == df["argmax_mode"])
+            & (df["risk_naive"] == 0) & (df["risk_worst_case"] > 0)
+        ].sort_values("risk_worst_case", ascending=False)
+    raise ValueError(f"unknown criterion: {criterion!r} (expected 'near_miss' or 'group_b')")
+
+
 def resolve_case_scene_file(cfg):
     """
     Returns the scene_file for a case_trajectories_*.py cross-model run.

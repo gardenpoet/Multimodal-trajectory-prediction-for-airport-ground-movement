@@ -21,12 +21,13 @@ time (AGENT_ORDER_STRATEGY/K_AGENTS below, from configs/data/default.yaml),
 so a CSV row's ego_id (an index into that subset) maps to the right
 physical agent in the full scene.
 
-Usage:
+Usage (--criterion near_miss, the default, or group_b -- see
+risk_assessment.common.select_candidates):
     python -m risk_assessment.plot_risk_cases \\
         --input_csv /gpfs/scratch/exy064/ljx/Risk-Assessment/risk_assessment/out/kbos_50_4T_cases_ranked.csv \\
         --out_dir /gpfs/scratch/exy064/ljx/Risk-Assessment/risk_assessment/out/case_screenshots/kbos \\
         --airport kbos \\
-        --max_sep_km 0.05
+        --criterion group_b
 """
 import argparse
 import math
@@ -53,6 +54,8 @@ os.environ.setdefault("PROJECT_ROOT", _TWO_STAGE_REPO)
 from amelia_scenes.visualization import scene_viz
 from amelia_scenes.utils.dataset import load_assets
 from amelia_scenes.utils import global_masks as G
+
+from risk_assessment.common import select_candidates, SAFETY_MARGIN_KM
 
 # configs/data/default.yaml's sampling_strategy/k_agents -- the subsetting
 # amelia_dataset.py's transform_scene_data applies before assigning ego_id,
@@ -118,7 +121,14 @@ def main():
     ap.add_argument(
         "--max_sep_km", type=float, default=0.05,
         help="Only plot rows with true_min_sep_gt below this (default: "
-             "common.py's SAFETY_MARGIN_KM, 50m).")
+             "common.py's SAFETY_MARGIN_KM, 50m). Only used by "
+             "--criterion near_miss.")
+    ap.add_argument(
+        "--criterion", choices=["near_miss", "group_b"], default="near_miss",
+        help="near_miss (default): a genuine close REAL approach. group_b: "
+             "the gt-mode prediction is itself safe but some OTHER mode/"
+             "candidate lands inside the safety margin -- see "
+             "risk_assessment.common.select_candidates.")
     ap.add_argument(
         "--limit", type=int, default=None,
         help="Cap the number of scenes plotted -- sanity-check with a small "
@@ -137,15 +147,10 @@ def main():
     os.makedirs(args.out_dir, exist_ok=True)
 
     df = pd.read_csv(args.input_csv)
-    df = df[
-        (df["true_min_sep_gt_agent_type"] == "Aircraft")
-        & (df["true_min_sep_gt_on_road"] == True)
-        & (df["true_min_sep_gt"] < args.max_sep_km)
-    ].sort_values("true_min_sep_gt")
+    df = select_candidates(df, args.criterion, args.max_sep_km)
     if args.limit:
         df = df.head(args.limit)
-    print(f"[plot_risk_cases] {len(df)} candidates to plot "
-          f"(true_min_sep_gt < {args.max_sep_km * 1000:.0f}m, Aircraft, on-road)")
+    print(f"[plot_risk_cases] {len(df)} candidates to plot (criterion={args.criterion})")
 
     assets = _get_assets(args.base_dir, args.airport)
 
@@ -160,8 +165,13 @@ def main():
             real_ego_id = int(agents_in_scene[int(row["ego_id"])])
             crop = _compute_crop(scene, real_ego_id)
 
-            sep_m = row["true_min_sep_gt"] * 1000.0
-            tag = f"b{row['batch_idx']}_s{row['sample_idx']}_sep{sep_m:.1f}m"
+            real_sep_m = row["true_min_sep_gt"] * 1000.0
+            if args.criterion == "group_b":
+                worst_sep_m = (SAFETY_MARGIN_KM - row["risk_worst_case"]) * 1000.0
+                tag = (f"b{row['batch_idx']}_s{row['sample_idx']}"
+                       f"_real{real_sep_m:.1f}m_worst{worst_sep_m:.1f}m")
+            else:
+                tag = f"b{row['batch_idx']}_s{row['sample_idx']}_sep{real_sep_m:.1f}m"
             filename = os.path.join(args.out_dir, f"{args.airport}_{tag}.png")
             scene_viz.plot_scene(
                 scene, assets, filename, scene_type="simple",

@@ -22,7 +22,8 @@ amelia_baseline.py pipeline (+ the interactive artifact) is for, once a
 shortlist is picked from this pass.
 
 Usage (reuses eval_two_stage.yaml's data/paths/model composition, same as
-find_cases_two_stage.py/case_risk_dynamics.py):
+find_cases_two_stage.py/case_risk_dynamics.py; +criterion=near_miss
+(default) or group_b -- see risk_assessment.common.select_candidates):
 
     python -m risk_assessment.plot_risk_cases_pred \\
         ckpt=kbos2 data=kbos.yaml \\
@@ -34,8 +35,8 @@ find_cases_two_stage.py/case_risk_dynamics.py):
         +model.traj_net.config.decoder.score_head_type=attention \\
         +scorer.score_head_load='/gpfs/.../per_mode_scorer_hard.pt' \\
         +input_csv=/gpfs/.../kbos_50_4T_cases_ranked.csv \\
-        +out_dir=/gpfs/.../risk_assessment/out/case_screenshots_pred/kbos \\
-        +max_sep_km=0.05 +limit_batches=390
+        +out_dir=/gpfs/.../risk_assessment/out/case_screenshots_groupb_pred/kbos \\
+        +criterion=group_b +limit_batches=390
 """
 import json
 import os
@@ -68,6 +69,7 @@ from amelia_scenes.visualization import common as C
 
 from risk_assessment.common import (
     to_device, seed_for_reproducible_ego_selection, load_airport_ref, xy_array_to_latlon,
+    select_candidates, SAFETY_MARGIN_KM,
 )
 
 MODE_NAMES = TURN_MODES
@@ -249,17 +251,14 @@ def main(cfg: DictConfig) -> None:
     if not input_csv or not out_dir:
         raise ValueError("Pass +input_csv=... +out_dir=... on the command line.")
     max_sep_km = float(cfg.get("max_sep_km", 0.05))
+    criterion = cfg.get("criterion", "near_miss")
     os.makedirs(out_dir, exist_ok=True)
 
-    df = pd.read_csv(input_csv)
-    df = df[
-        (df["true_min_sep_gt_agent_type"] == "Aircraft")
-        & (df["true_min_sep_gt_on_road"] == True)
-        & (df["true_min_sep_gt"] < max_sep_km)
-    ]
+    df_all = pd.read_csv(input_csv)
+    df = select_candidates(df_all, criterion, max_sep_km)
     limit = cfg.get("limit")
     if limit:
-        df = df.sort_values("true_min_sep_gt").head(int(limit))
+        df = df.head(int(limit))
     wanted = {}
     for _, row in df.iterrows():
         wanted.setdefault(int(row["batch_idx"]), []).append(int(row["sample_idx"]))
@@ -381,9 +380,15 @@ def main(cfg: DictConfig) -> None:
                             "candidates": cands,
                         }
 
-                    sep_m = float(df[(df.batch_idx == batch_idx) & (df.sample_idx == b)]
-                                  ["true_min_sep_gt"].iloc[0]) * 1000.0
-                    fname = os.path.join(out_dir, f"{airport}_b{batch_idx}_s{b}_sep{sep_m:.1f}m.png")
+                    row = df[(df.batch_idx == batch_idx) & (df.sample_idx == b)].iloc[0]
+                    real_sep_m = float(row["true_min_sep_gt"]) * 1000.0
+                    if criterion == "group_b":
+                        worst_sep_m = (SAFETY_MARGIN_KM - float(row["risk_worst_case"])) * 1000.0
+                        fname = os.path.join(
+                            out_dir,
+                            f"{airport}_b{batch_idx}_s{b}_real{real_sep_m:.1f}m_worst{worst_sep_m:.1f}m.png")
+                    else:
+                        fname = os.path.join(out_dir, f"{airport}_b{batch_idx}_s{b}_sep{real_sep_m:.1f}m.png")
                     ok = _plot_case(fname, airport, _get_assets(cfg.paths.base_dir, airport),
                                      ego_hist_ll, ego_fut_ll, other_agents_ll, modes_out,
                                      gt_mode, argmax_mode)
