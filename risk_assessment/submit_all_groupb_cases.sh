@@ -1,8 +1,9 @@
 #!/bin/bash
-# Submits all 18 SLURM jobs for the 6 KBOS group_b candidates picked from
-# the bulk group_b screening (case_risk_dynamics 4T + case_trajectories_
+# Submits all 30 SLURM jobs for the 6 KBOS group_b candidates picked from
+# the bulk group_b screening (case_risk_dynamics 1T+2T+4T + case_trajectories_
 # stgcnn + case_trajectories_amelia_baseline, for b3s70/b3s34/b6s112/
-# b6s40/b5s9/b5s99).
+# b6s40/b5s9/b5s99 -- same 5-jobs-per-case treatment as the confirmed
+# near-miss case).
 #
 # Run from the repo root:
 #   bash risk_assessment/submit_all_groupb_cases.sh
@@ -13,9 +14,11 @@ cd "$(dirname "$0")/.."
 TAGS=(b3s70 b3s34 b6s112 b6s40 b5s9 b5s99)
 
 for tag in "${TAGS[@]}"; do
+    sbatch "risk_assessment/run_case_risk_dynamics_kbos_groupb_${tag}_1T.sh"
+    sbatch "risk_assessment/run_case_risk_dynamics_kbos_groupb_${tag}_2T.sh"
     sbatch "risk_assessment/run_case_risk_dynamics_kbos_groupb_${tag}_4T.sh"
     sbatch "risk_assessment/run_case_trajectories_kbos_groupb_${tag}_stgcnn.sh"
     sbatch "risk_assessment/run_case_trajectories_kbos_groupb_${tag}_amelia_baseline.sh"
 done
 
-echo "Submitted 18 jobs."
+echo "Submitted 30 jobs."
