@@ -45,5 +45,5 @@ python -m risk_assessment.case_risk_dynamics \
     +model.traj_net.config.decoder.score_mode=5 \
     +model.traj_net.config.decoder.score_head_type=attention \
     +scorer.score_head_load='/gpfs/scratch/exy064/ljx/Risk-Assessment/AmeliaTF_main_two_phases_4T/out/${ckpt}/per_mode_scorer_hard.pt' \
-    +case_batch_idx=3 +case_sample_idx=34 \
+    +case_batch_idx=3 +case_sample_idx=34 +case_ref_agent_idx=2 \
     +output_json="$OUT_JSON"

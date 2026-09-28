@@ -1,6 +1,10 @@
 #!/bin/bash
-# Group B illustrative case for KBOS (batch=3, sample=34, ego_id/
-# ref agent auto-detected). From the bulk group_b screening
+# Group B illustrative case for KBOS (batch=3, sample=34, ego_id=0,
+# ref_agent_idx=2 -- OVERRIDDEN, not auto-detected: the dangerous Hold-mode
+# candidate conflicts with a different aircraft (#2) than the one the
+# realized trajectory itself got close to (#3), so auto-detection picks
+# the wrong reference agent for this case -- see 2026-09-28 notes).
+# From the bulk group_b screening
 # (risk_assessment.common.select_candidates's criterion="group_b" -- see
 # run_plot_group_b_cases_kbos.sh): realized/gt-mode outcome is safe
 # (~75.4m) but some OTHER mode/candidate lands at just ~2.6m.
@@ -39,5 +43,5 @@ python -m risk_assessment.case_risk_dynamics \
     mode_ckpt_path='${ckpt_dir}/${type}/${ckpt}/mode_model/${ckpt}_twophases_50.ckpt' \
     traj_ckpt_path='${ckpt_dir}/${type}/${ckpt}/traj_model/${ckpt}_twophases_1_50.ckpt' \
     model.traj_net.config.num_hypotheses=1 \
-    +case_batch_idx=3 +case_sample_idx=34 \
+    +case_batch_idx=3 +case_sample_idx=34 +case_ref_agent_idx=2 \
     +output_json="$OUT_JSON"

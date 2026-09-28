@@ -35,6 +35,6 @@ python -m risk_assessment.case_trajectories_stgcnn \
     +data.dataset.config.random_ego=false \
     train=false \
     'ckpt_path=/gpfs/scratch/exy064/ljx/Risk-Assessment/STGCNN_baseline/out/logs/train/runs/2026-09-17_18-23-16/checkpoints/epoch_185.ckpt' \
-    +case_batch_idx=3 +case_sample_idx=34 \
+    +case_batch_idx=3 +case_sample_idx=34 +case_ref_agent_idx=2 \
     +cases_csv="/gpfs/scratch/exy064/ljx/Risk-Assessment/risk_assessment/out/kbos_50_4T_cases_ranked.csv" \
     +output_json="$OUT_JSON"

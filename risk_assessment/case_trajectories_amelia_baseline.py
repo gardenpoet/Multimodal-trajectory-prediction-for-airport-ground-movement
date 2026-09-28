@@ -102,6 +102,13 @@ def main(cfg: DictConfig) -> None:
     ckpt_path = cfg.get("ckpt_path")
     if not ckpt_path:
         raise ValueError("Pass ckpt_path=/path/to/checkpoint.ckpt on the command line.")
+    # None (not set) means auto-detect from the realized trajectory below --
+    # see case_risk_dynamics.py's module docstring for why that's the right
+    # default, and its "auto-detect can pick the wrong agent for a
+    # counterfactual (e.g. Hold-mode) candidate" caveat for when to override.
+    ref_agent_idx_override = cfg.get("case_ref_agent_idx")
+    ref_agent_idx_override = (
+        int(ref_agent_idx_override) if ref_agent_idx_override is not None else None)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = hydra.utils.instantiate(cfg.model)
@@ -176,27 +183,30 @@ def main(cfg: DictConfig) -> None:
 
             real_ego_xy = sequences[b, ego_id, hist_len:, G.XY].detach().cpu().numpy()
 
-            # Auto-detect reference agent from the REALIZED trajectory --
-            # same logic as case_risk_dynamics.py, computed independently.
-            A_total = sequences.shape[1]
-            other_idx, other_xy, other_valid = [], [], []
-            for a in range(A_total):
-                if a == ego_id:
-                    continue
-                valid_a = agent_masks[b, a, hist_len:].bool().detach().cpu().numpy()
-                if not valid_a.any():
-                    continue
-                other_idx.append(a)
-                other_xy.append(sequences[b, a, hist_len:, G.XY].detach().cpu().numpy())
-                other_valid.append(valid_a)
-            if not other_idx:
-                raise RuntimeError(f"No valid other agent for scene_file={target_scene_file}")
-            other_xy_arr = np.stack(other_xy, axis=0)
-            other_valid_arr = np.stack(other_valid, axis=0)
-            dist = np.linalg.norm(other_xy_arr - real_ego_xy[None, :, :], axis=-1)
-            dist = np.where(other_valid_arr, dist, np.inf)
-            agent_i, _t_i = np.unravel_index(np.argmin(dist), dist.shape)
-            ref_agent_idx = other_idx[agent_i]
+            if ref_agent_idx_override is not None:
+                ref_agent_idx = ref_agent_idx_override
+            else:
+                # Auto-detect reference agent from the REALIZED trajectory --
+                # same logic as case_risk_dynamics.py, computed independently.
+                A_total = sequences.shape[1]
+                other_idx, other_xy, other_valid = [], [], []
+                for a in range(A_total):
+                    if a == ego_id:
+                        continue
+                    valid_a = agent_masks[b, a, hist_len:].bool().detach().cpu().numpy()
+                    if not valid_a.any():
+                        continue
+                    other_idx.append(a)
+                    other_xy.append(sequences[b, a, hist_len:, G.XY].detach().cpu().numpy())
+                    other_valid.append(valid_a)
+                if not other_idx:
+                    raise RuntimeError(f"No valid other agent for scene_file={target_scene_file}")
+                other_xy_arr = np.stack(other_xy, axis=0)
+                other_valid_arr = np.stack(other_valid, axis=0)
+                dist = np.linalg.norm(other_xy_arr - real_ego_xy[None, :, :], axis=-1)
+                dist = np.where(other_valid_arr, dist, np.inf)
+                agent_i, _t_i = np.unravel_index(np.argmin(dist), dist.shape)
+                ref_agent_idx = other_idx[agent_i]
 
             ref_xy = sequences[b, ref_agent_idx, hist_len:, G.XY].detach().cpu().numpy()
             ref_valid = agent_masks[b, ref_agent_idx, hist_len:].bool().detach().cpu().numpy()

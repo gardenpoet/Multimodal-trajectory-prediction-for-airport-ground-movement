@@ -39,5 +39,5 @@ python -m risk_assessment.case_risk_dynamics \
     mode_ckpt_path='${ckpt_dir}/${type}/${ckpt}/mode_model/${ckpt}_twophases_50.ckpt' \
     traj_ckpt_path='${ckpt_dir}/${type}/${ckpt}/traj_model/${ckpt}_twophases_1_50.ckpt' \
     model.traj_net.config.num_hypotheses=1 \
-    +case_batch_idx=5 +case_sample_idx=9 \
+    +case_batch_idx=5 +case_sample_idx=9 +case_ref_agent_idx=3 \
     +output_json="$OUT_JSON"

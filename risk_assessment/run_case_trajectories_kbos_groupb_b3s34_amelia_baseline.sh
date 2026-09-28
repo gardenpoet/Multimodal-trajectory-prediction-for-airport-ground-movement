@@ -35,6 +35,6 @@ mkdir -p "$(dirname "$OUT_JSON")"
 python -m risk_assessment.case_trajectories_amelia_baseline \
     --config-name=eval_kbos \
     +data.dataset.config.random_ego=false \
-    +case_batch_idx=3 +case_sample_idx=34 \
+    +case_batch_idx=3 +case_sample_idx=34 +case_ref_agent_idx=2 \
     +cases_csv="/gpfs/scratch/exy064/ljx/Risk-Assessment/risk_assessment/out/kbos_50_4T_cases_ranked.csv" \
     +output_json="$OUT_JSON"
