@@ -1,19 +1,19 @@
 #!/bin/bash
-# Cross-model trajectory dump (AmeliaTF_main plain baseline) for KBOS's
-# Group B illustrative case (batch=3, sample=70 in the two-stage model's own
-# dataloader ordering -- see run_case_risk_dynamics_kbos_groupb_4T.sh's
-# docstring for what this case demonstrates and the 2026-09-28
-# re-selection). scene_file is resolved from the ranked CSV at run time
+# Cross-model trajectory dump (AmeliaTF_main plain baseline) for KBOS
+# group_b candidate (batch=3, sample=70 in the two-stage
+# model's own dataloader ordering) -- see
+# run_case_risk_dynamics_kbos_groupb_b3s70_4T.sh. scene_file is resolved
+# from the ranked CSV at run time
 # (risk_assessment.common.resolve_case_scene_file), not hardcoded. Scans
 # the FULL test set -- give it ample time. ckpt_path comes from
 # configs/eval_kbos.yaml's own default.
 #
 # Run from the repo root:
-#   sbatch risk_assessment/run_case_trajectories_kbos_groupb_amelia_baseline.sh
+#   sbatch risk_assessment/run_case_trajectories_kbos_groupb_b3s70_amelia_baseline.sh
 
-#SBATCH --job-name=case_trajectories_kbos_groupb_baseline
-#SBATCH --output=risk_assessment/case_trajectories_kbos_groupb_baseline_%j.out
-#SBATCH --error=risk_assessment/case_trajectories_kbos_groupb_baseline_%j.err
+#SBATCH --job-name=case_trajectories_kbos_groupb_b3s70_baseline
+#SBATCH --output=risk_assessment/case_trajectories_kbos_groupb_b3s70_baseline_%j.out
+#SBATCH --error=risk_assessment/case_trajectories_kbos_groupb_b3s70_baseline_%j.err
 
 #SBATCH --partition=andrena
 #SBATCH --account=pilot_andrena

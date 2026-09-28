@@ -1,19 +1,17 @@
 #!/bin/bash
-# Cross-model trajectory dump (STGCNN_baseline) for KBOS's Group B
-# illustrative case (batch=3, sample=70 in the two-stage model's own
-# dataloader ordering -- see run_case_risk_dynamics_kbos_groupb_4T.sh's
-# docstring for what this case demonstrates and the 2026-09-28
-# re-selection). scene_file is resolved from the ranked CSV at run time
-# (risk_assessment.common.resolve_case_scene_file), not hardcoded, since
-# STGCNN's own batch ordering is unrelated. Scans the FULL test set -- give
-# it ample time.
+# Cross-model trajectory dump (STGCNN_baseline) for KBOS group_b candidate
+# (batch=3, sample=70 in the two-stage model's own dataloader
+# ordering) -- see run_case_risk_dynamics_kbos_groupb_b3s70_4T.sh. scene_file
+# is resolved from the ranked CSV at run time
+# (risk_assessment.common.resolve_case_scene_file), not hardcoded. Scans the
+# FULL test set -- give it ample time.
 #
 # Run from the repo root:
-#   sbatch risk_assessment/run_case_trajectories_kbos_groupb_stgcnn.sh
+#   sbatch risk_assessment/run_case_trajectories_kbos_groupb_b3s70_stgcnn.sh
 
-#SBATCH --job-name=case_trajectories_kbos_groupb_stgcnn
-#SBATCH --output=risk_assessment/case_trajectories_kbos_groupb_stgcnn_%j.out
-#SBATCH --error=risk_assessment/case_trajectories_kbos_groupb_stgcnn_%j.err
+#SBATCH --job-name=case_trajectories_kbos_groupb_b3s70_stgcnn
+#SBATCH --output=risk_assessment/case_trajectories_kbos_groupb_b3s70_stgcnn_%j.out
+#SBATCH --error=risk_assessment/case_trajectories_kbos_groupb_b3s70_stgcnn_%j.err
 
 #SBATCH --partition=andrena
 #SBATCH --account=pilot_andrena
