@@ -1,12 +1,14 @@
 #!/bin/bash
-# Group B illustrative case for KBOS (batch=19, sample=14, ego_id=0, ref
-# agent auto-detected): gt-mode (TurnRight) prediction (67.2m) closely
-# matches the realized outcome (68.4m), both safe -- but the Straight mode's
-# candidate predicts just 0.01m, i.e. "if this aircraft had gone straight
-# instead of turning right, it would have nearly collided." Demonstrates why
-# risk_worst_case looks beyond the single most-likely prediction. 4T
+# Group B illustrative case for KBOS (batch=3, sample=70, ego_id/ref agent
+# auto-detected). Re-selected 2026-09-28 from the bulk group_b screening
+# (risk_assessment.common.select_candidates's criterion="group_b" --
+# see run_plot_group_b_cases_kbos.sh): realized/gt-mode outcome is safe
+# (~84.8m) but some OTHER mode/candidate lands at just ~3.9m, i.e. "if this
+# aircraft had taken that other manoeuvre instead, it would have nearly
+# collided." Demonstrates why risk_worst_case looks beyond the single
+# most-likely prediction. Replaces the earlier (19,14) candidate. 4T
 # checkpoint only (this story needs candidate diversity, not the 1T/2T/4T
-# comparison the confirmed near-miss cases get).
+# comparison the confirmed near-miss case gets).
 #
 # Run from the repo root:
 #   sbatch risk_assessment/run_case_risk_dynamics_kbos_groupb_4T.sh
@@ -32,7 +34,7 @@ module load cuda/12.2.2-gcc-12.2.0
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export HYDRA_FULL_ERROR=1
 
-OUT_JSON="/gpfs/scratch/exy064/ljx/Risk-Assessment/risk_assessment/out/kbos_case_19_14_groupb_dynamics_4T.json"
+OUT_JSON="/gpfs/scratch/exy064/ljx/Risk-Assessment/risk_assessment/out/kbos_case_3_70_groupb_dynamics_4T.json"
 mkdir -p "$(dirname "$OUT_JSON")"
 
 python -m risk_assessment.case_risk_dynamics \
@@ -46,5 +48,5 @@ python -m risk_assessment.case_risk_dynamics \
     +model.traj_net.config.decoder.score_mode=5 \
     +model.traj_net.config.decoder.score_head_type=attention \
     +scorer.score_head_load='/gpfs/scratch/exy064/ljx/Risk-Assessment/AmeliaTF_main_two_phases_4T/out/${ckpt}/per_mode_scorer_hard.pt' \
-    +case_batch_idx=19 +case_sample_idx=14 \
+    +case_batch_idx=3 +case_sample_idx=70 \
     +output_json="$OUT_JSON"
