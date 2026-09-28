@@ -22,12 +22,14 @@ agent as the two-stage script's auto-detection for the same case, but is
 computed fresh here rather than assumed.
 
 Output JSON schema (see case_risk_dynamics.py's docstring for the general
-shape):
+shape, including the sigma_xy/start_heading_deg caveat -- RAW, un-rotated
+sigma, not yet used by anything):
     meta: airport, batch_idx, sample_idx, scene_file, ego_id, ref_agent_idx,
-          ref_agent_type, hist_len
+          ref_agent_type, hist_len, start_heading_deg
     gt: {ego, ref_agent, other_agents: [...]} -- same as case_risk_dynamics.py
-    prediction: {dist_m: [T_pred floats], latlon: [[lat,lon], ...]} -- this
-        model's single hypothesis (no modes/candidates dimension)
+    prediction: {dist_m: [T_pred floats], latlon: [[lat,lon], ...],
+        sigma_xy: [[sigma_x,sigma_y], ...]} -- this model's single
+        hypothesis (no modes/candidates dimension)
     real: {dist_m: [T_pred floats]}
 
 Usage (mirrors find_cases_stgcnn.py's model-loading convention). scene_file
@@ -146,6 +148,7 @@ def main(cfg: DictConfig) -> None:
             ego_id = ego_ids[b]
 
             ego_mu = separate_ego_agent(mu, ego_ids).squeeze(1)  # (B, Tp, 2)
+            ego_sigma = separate_ego_agent(sigma, ego_ids).squeeze(1)  # (B, Tp, 2)
 
             sequences = scene['sequences']
             agent_masks = scene['agent_masks']
@@ -154,6 +157,11 @@ def main(cfg: DictConfig) -> None:
             traj_abs = _ego_trajectory_abs(ego_mu, sequences, ego_ids, hist_len)  # (B, Tp, 2)
             fut_end = hist_len + max_pred_len
             pred_xy = traj_abs[b]  # (Tp, 2)
+            # RAW (un-rotated) sigma -- see case_risk_dynamics.py's sigma_xy
+            # docstring note for why this isn't in the same frame as pred_xy.
+            pred_sigma = ego_sigma[b].detach().cpu().numpy()  # (Tp, 2)
+            start_heading_deg = float(
+                sequences[b, ego_id, hist_len - 1, G.HD].detach().cpu().item())
             real_ego_xy = sequences[b, ego_id, hist_len:fut_end, G.XY].detach().cpu().numpy()
 
             # Auto-detect reference agent from the REALIZED trajectory --
@@ -223,11 +231,13 @@ def main(cfg: DictConfig) -> None:
                     "ref_agent_idx": ref_agent_idx,
                     "ref_agent_type": AGENT_TYPE_NAMES.get(ref_type, str(ref_type)),
                     "hist_len": hist_len,
+                    "start_heading_deg": start_heading_deg,
                 },
                 "gt": gt_out,
                 "prediction": {
                     "dist_m": [None if np.isnan(v) else float(v) for v in pred_dist],
                     "latlon": xy_array_to_latlon(pred_xy_masked, ref),
+                    "sigma_xy": [[float(sx), float(sy)] for sx, sy in pred_sigma],
                 },
                 "real": {"dist_m": [None if np.isnan(v) else float(v) for v in real_dist]},
             }

@@ -36,10 +36,23 @@ separately) with:
             mask risk_gated restricts its max to; an infeasible mode's
             candidates have no physical meaning and should be omitted from
             the chart), candidates: [{prob, dist_m: [T_pred floats],
-            latlon: [[lat,lon], ...]}, ...]}}
+            latlon: [[lat,lon], ...], sigma_xy: [[sigma_x,sigma_y], ...]},
+            ...]}}
     real: {dist_m: [T_pred floats]} (kept for the risk-dynamics chart;
           redundant with gt.ego's future half but in the ref-agent-distance
           form that chart wants directly)
+
+    sigma_xy is the GMM decoder's own predicted per-timestep std (x,y), RAW
+    -- i.e. in the same egocentric-at-t=hist_len-1, heading-relative frame
+    mu is in BEFORE inv_transform_batch's rotation+translation, NOT rotated
+    into the same absolute/lat-lon frame dist_m/latlon are in. Rotating a
+    covariance correctly needs R(theta) Sigma R(theta)^T, not just
+    reinterpreting sigma_x/sigma_y unchanged -- meta.start_heading_deg is
+    the theta that rotation would need, for whenever that gets built.
+    Currently unused by anything (no consumer reads this field yet) --
+    captured now, alongside the model output it was always computing
+    anyway, so a future Monte-Carlo/uncertainty pass doesn't need to
+    re-run every case from scratch.
 
 The latlon fields are for risk_assessment/case_trajectories_{stgcnn,
 amelia_baseline}.py's map-overlay companion outputs -- see those scripts'
@@ -177,6 +190,7 @@ def main(cfg: DictConfig) -> None:
 
             ego_probs = separate_ego_agent(mode_probs, ego_ids).squeeze(1)      # (B, M)
             ego_mu = separate_ego_agent(traj_mu, ego_ids).squeeze(1)            # (B, T_total, M, K, D)
+            ego_sigma = separate_ego_agent(traj_sigma, ego_ids).squeeze(1)      # (B, T_total, M, K, D)
 
             # Which modes are geometrically feasible for this scene (same
             # mask risk_gated restricts its max to in find_cases_two_stage.py)
@@ -214,6 +228,12 @@ def main(cfg: DictConfig) -> None:
             ego_id = ego_ids[b]
             gt_mode = int(ego_true_mode[b].item())
             argmax_mode = int(ego_probs[b].argmax().item())
+
+            # Same heading _mode_candidate_trajectories_abs uses to rotate mu
+            # into the absolute frame -- recorded so sigma_xy (left in the
+            # RAW, un-rotated frame below) can be correctly rotated later.
+            start_heading_deg = float(
+                sequences[b, ego_id, hist_len - 1, G.HD].detach().cpu().item())
 
             real_ego_xy = sequences[b, ego_id, hist_len:, G.XY].detach().cpu().numpy()  # (T_pred, 2)
 
@@ -287,10 +307,12 @@ def main(cfg: DictConfig) -> None:
                     dist = np.linalg.norm(cand_xy - ref_xy, axis=-1)
                     dist = np.where(ref_valid, dist, np.nan) * 1000  # km -> m
                     cand_xy_masked = np.where(ref_valid[:, None], cand_xy, np.nan)
+                    cand_sigma = ego_sigma[b, hist_len:, m, k, :2].detach().cpu().numpy()  # (T_pred, 2)
                     cands.append({
                         "prob": float(cand_probs[b, m, k]),
                         "dist_m": [None if np.isnan(v) else float(v) for v in dist],
                         "latlon": xy_array_to_latlon(cand_xy_masked, ref),
+                        "sigma_xy": [[float(sx), float(sy)] for sx, sy in cand_sigma],
                     })
                 modes_out[MODE_NAMES[m]] = {
                     "mode_prob": float(ego_probs[b, m].item()),
@@ -311,6 +333,7 @@ def main(cfg: DictConfig) -> None:
                     "gt_mode": MODE_NAMES[gt_mode] if 0 <= gt_mode < len(MODE_NAMES) else gt_mode,
                     "argmax_mode": MODE_NAMES[argmax_mode],
                     "hist_len": hist_len,
+                    "start_heading_deg": start_heading_deg,
                 },
                 "gt": gt_out,
                 "modes": modes_out,

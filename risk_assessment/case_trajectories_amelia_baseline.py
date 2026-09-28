@@ -22,13 +22,14 @@ physical agent since agents_in_scene ordering is baked into the scene file
 itself.
 
 Output JSON schema (see case_risk_dynamics.py's docstring for the general
-shape):
+shape, including the sigma_xy/start_heading_deg caveat -- RAW, un-rotated
+sigma, not yet used by anything):
     meta: airport, batch_idx, sample_idx, scene_file, ego_id, ref_agent_idx,
-          ref_agent_type, hist_len
+          ref_agent_type, hist_len, start_heading_deg
     gt: {ego, ref_agent, other_agents: [...]} -- same as case_risk_dynamics.py
-    hypotheses: [{prob, dist_m: [T_pred floats], latlon: [[lat,lon], ...]}, ...]
-        -- H raw hypotheses, no mode grouping (unlike case_risk_dynamics.py's
-        modes dict)
+    hypotheses: [{prob, dist_m: [T_pred floats], latlon: [[lat,lon], ...],
+        sigma_xy: [[sigma_x,sigma_y], ...]}, ...] -- H raw hypotheses, no
+        mode grouping (unlike case_risk_dynamics.py's modes dict)
     real: {dist_m: [T_pred floats]}
 
 Usage (mirrors find_cases_amelia_baseline.py's model-loading convention).
@@ -157,6 +158,7 @@ def main(cfg: DictConfig) -> None:
 
             ego_pred_scores = separate_ego_agent(pred_scores, ego_ids).squeeze(1)  # (B, H)
             ego_mu = separate_ego_agent(mu, ego_ids).squeeze(1)                    # (B, T_total, H, D)
+            ego_sigma = separate_ego_agent(sigma, ego_ids).squeeze(1)              # (B, T_total, H, D)
 
             sequences = scene['sequences']
             agent_masks = scene['agent_masks']
@@ -166,6 +168,11 @@ def main(cfg: DictConfig) -> None:
                 ego_mu, sequences, ego_ids, hist_len)  # (H, B, T_pred, 2)
             probs_np = ego_pred_scores.detach().cpu().numpy()  # (B, H)
             H = traj_abs.shape[0]
+
+            # RAW (un-rotated) sigma -- see case_risk_dynamics.py's sigma_xy
+            # docstring note for why this isn't in the same frame as hyp_xy.
+            start_heading_deg = float(
+                sequences[b, ego_id, hist_len - 1, G.HD].detach().cpu().item())
 
             real_ego_xy = sequences[b, ego_id, hist_len:, G.XY].detach().cpu().numpy()
 
@@ -229,10 +236,12 @@ def main(cfg: DictConfig) -> None:
                 dist_h = np.linalg.norm(hyp_xy - ref_xy, axis=-1)
                 dist_h = np.where(ref_valid, dist_h, np.nan) * 1000
                 hyp_xy_masked = np.where(ref_valid[:, None], hyp_xy, np.nan)
+                hyp_sigma = ego_sigma[b, hist_len:, h, :2].detach().cpu().numpy()  # (T_pred, 2)
                 hyps_out.append({
                     "prob": float(probs_np[b, h]),
                     "dist_m": [None if np.isnan(v) else float(v) for v in dist_h],
                     "latlon": xy_array_to_latlon(hyp_xy_masked, ref),
+                    "sigma_xy": [[float(sx), float(sy)] for sx, sy in hyp_sigma],
                 })
 
             out = {
@@ -245,6 +254,7 @@ def main(cfg: DictConfig) -> None:
                     "ref_agent_idx": ref_agent_idx,
                     "ref_agent_type": AGENT_TYPE_NAMES.get(ref_type, str(ref_type)),
                     "hist_len": hist_len,
+                    "start_heading_deg": start_heading_deg,
                 },
                 "gt": gt_out,
                 "hypotheses": hyps_out,
