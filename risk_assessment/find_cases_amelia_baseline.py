@@ -84,6 +84,7 @@ from risk_assessment.common import (
     to_device, min_separation, min_separation_with_type, has_nearby_agent,
     aggregate_risk, seed_for_reproducible_ego_selection, AMBIGUITY_MARGIN,
     load_airport_ref, check_on_road,
+    mc_violation_risk, MC_THRESHOLD_KM_200FT, MC_SAMPLES_DEFAULT,
 )
 
 GT_MODE_NAMES = TURN_MODES  # descriptive only -- see module docstring
@@ -107,7 +108,10 @@ def _hypothesis_trajectories_abs(ego_mu, sequences, ego_ids, hist_len):
     ego_mu: (B, T_total, H, D) relative predicted trajectories (ego only).
     sequences: (B, A, T_total, D_seq) absolute per-agent sequences (whole scene).
     ego_ids: list[int] of length B.
-    Returns: (H, B, T_pred, 2) absolute XY per hypothesis.
+    Returns: (H, B, T_pred, 2) absolute XY per hypothesis, and (B,)
+    start_heading -- the SAME theta inv_transform used to rotate ego_mu
+    into traj_abs, returned so a caller can apply the identical rotation to
+    ego_sigma (see common.mc_violation_risk's docstring for why).
 
     No inv_transform_batch in this repo's vendored amelia_scenes (that
     batched helper is specific to AmeliaTF_main_two_phases_4T) -- loops
@@ -130,7 +134,7 @@ def _hypothesis_trajectories_abs(ego_mu, sequences, ego_ids, hist_len):
         future_rel = ego_mu[:, hist_len:, h, :2].detach().cpu().numpy()  # (B, T_pred, 2)
         for b in range(B):
             traj_abs[h, b] = inv_transform(future_rel[b], start_abs[b], start_heading[b])
-    return traj_abs
+    return traj_abs, start_heading
 
 
 @hydra.main(version_base="1.3", config_path="../AmeliaTF_main/configs",
@@ -142,6 +146,13 @@ def main(cfg: DictConfig) -> None:
     ckpt_path = cfg.get("ckpt_path")
     if not ckpt_path:
         raise ValueError("Pass ckpt_path=/path/to/checkpoint.ckpt on the command line.")
+
+    # See find_cases_two_stage.py's docstring for risk_method="mc"'s meaning
+    # and defaults -- identical flag here.
+    risk_method = cfg.get("risk_method", "margin")
+    mc_threshold_km = (cfg.get("mc_threshold_ft") * 0.3048 / 1000.0) if cfg.get("mc_threshold_ft") else MC_THRESHOLD_KM_200FT
+    mc_samples = cfg.get("mc_samples", MC_SAMPLES_DEFAULT)
+    mc_rng = np.random.default_rng(cfg.get("seed", 42)) if risk_method == "mc" else None
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = hydra.utils.instantiate(cfg.model)
@@ -218,6 +229,7 @@ def main(cfg: DictConfig) -> None:
 
             ego_pred_scores = separate_ego_agent(pred_scores, ego_ids).squeeze(1)  # (B, H)
             ego_mu = separate_ego_agent(mu, ego_ids).squeeze(1)                    # (B, T_total, H, D)
+            ego_sigma_t = separate_ego_agent(sigma, ego_ids).squeeze(1) if risk_method == "mc" else None  # (B, T_total, H, D)
 
             rule_based = scene.get('rule_based_encoding')
             gt_mode_np = None
@@ -237,8 +249,8 @@ def main(cfg: DictConfig) -> None:
             agent_types = agent_types.reshape(B, -1)
             H = ego_pred_scores.shape[1]
 
-            traj_abs = _hypothesis_trajectories_abs(
-                ego_mu, sequences, ego_ids, hist_len)  # (H, B, T_pred, 2)
+            traj_abs, start_heading = _hypothesis_trajectories_abs(
+                ego_mu, sequences, ego_ids, hist_len)  # (H, B, T_pred, 2), (B,)
 
             probs_np = ego_pred_scores.detach().cpu().numpy()  # (B, H)
 
@@ -273,7 +285,18 @@ def main(cfg: DictConfig) -> None:
                 ])  # (H,)
 
                 if not has_nearby_agent(min_sep):
-                    continue  # Filter 1: no scenario relevance, skip
+                    continue  # Filter 1: no scenario relevance, skip (cheap deterministic pre-filter, used regardless of risk_method)
+
+                mc_risk = None
+                if risk_method == "mc":
+                    ego_sigma_b = ego_sigma_t[b, hist_len:].detach().cpu().numpy()  # (T_pred, H, D)
+                    mc_risk = np.array([
+                        mc_violation_risk(
+                            traj_abs[h, b], ego_sigma_b[:, h, :2], start_heading[b],
+                            other_xy_arr, other_valid_arr,
+                            threshold_km=mc_threshold_km, num_samples=mc_samples, rng=mc_rng)
+                        for h in range(H)
+                    ])  # (H,)
 
                 probs_b = probs_np[b]  # (H,), already a genuine softmax over H
                 naive_idx = int(probs_b.argmax())
@@ -283,7 +306,9 @@ def main(cfg: DictConfig) -> None:
                 ambiguous = bool((sorted_probs[0] - sorted_probs[1]) < AMBIGUITY_MARGIN) \
                     if H >= 2 else False
 
-                risk = aggregate_risk(min_sep, probs_b, naive_idx, gate_pool_idx, ambiguous)
+                risk = aggregate_risk(
+                    min_sep, probs_b, naive_idx, gate_pool_idx, ambiguous,
+                    risk_flat=mc_risk)
 
                 # For case-study screening only -- see find_cases_two_stage.py's
                 # equivalent comment (ground service vehicles legitimately

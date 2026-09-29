@@ -31,6 +31,15 @@ SAFETY_MARGIN_KM = 0.05     # ~50 m; see module docstring for the FAA/Pang-et-al
 AMBIGUITY_MARGIN = 0.10     # top1-top2 probability gap, below which "ambiguous"
 RELEVANCE_RADIUS_KM = 1.0   # scene must have another valid agent within this to count as "relevant"
 
+# Zhang et al. 2022 (zhang2022airport)'s own paired threshold for their
+# Monte Carlo separation-violation formulation (FAA ATC Terminal Spacing/
+# Sequencing), used only when risk_method="mc" (see mc_violation_risk) --
+# kept separate from SAFETY_MARGIN_KM (the deterministic margin proxy's own
+# 50 m) rather than replacing it, per the 2026-09-28 decision to pair each
+# methodology with its own threshold instead of mixing them.
+MC_THRESHOLD_KM_200FT = 200 * 0.3048 / 1000.0  # ~0.06096 km
+MC_SAMPLES_DEFAULT = 100    # see mc_violation_risk's docstring for why this is 10x smaller than the case study's S=1000
+
 
 def seed_for_reproducible_ego_selection(datamodule, seed=42):
     """
@@ -133,6 +142,79 @@ def min_separation_with_type(ego_traj_abs, other_xy, other_valid, other_types):
         return float("inf"), None, None
     agent_i, t_i = np.unravel_index(np.argmin(dist), dist.shape)
     return float(dist[agent_i, t_i]), int(other_types[agent_i]), int(t_i)
+
+
+def mc_violation_risk(ego_traj_abs, ego_sigma_rel, heading_deg, other_xy, other_valid,
+                       threshold_km=MC_THRESHOLD_KM_200FT, num_samples=MC_SAMPLES_DEFAULT, rng=None):
+    """
+    Monte Carlo separation-violation probability, following Zhang et al.
+    2022's Eq. 9 -- the probabilistic analogue of min_separation, returning
+    a probability in [0, 1] instead of a raw distance (smaller distance in
+    min_separation <=> larger risk here, so where min_separation takes the
+    MIN over (other agent, timestep) pairs, this takes the MAX). Only the
+    ego side is sampled (unlike Zhang et al.'s two-sided sampling), since
+    only ego has a predicted distribution in this pipeline -- the other
+    agent's position is its real, deterministic trajectory.
+
+    ego_traj_abs: (T_pred, 2) absolute mu, same frame (this repo's G.XY
+        local-XY km convention) as other_xy -- i.e. the SAME array
+        min_separation would take.
+    ego_sigma_rel: (T_pred, 2) sigma_x, sigma_y -- RAW, in the same
+        egocentric/heading-relative frame ego_traj_abs's own mu was in
+        BEFORE inv_transform/inv_transform_batch's rotation (confirmed a
+        standard deviation, not a variance: traj_pred_combined.py's
+        training loss passes sigma**2 into F.gaussian_nll_loss's variance
+        argument). Do not pass an already-rotated/absolute-frame sigma.
+    heading_deg: scalar, the SAME theta inv_transform/inv_transform_batch
+        used to rotate mu into ego_traj_abs -- applying the identical
+        rotation here lands the sampled offset in ego_traj_abs's own frame.
+    other_xy: (num_others, T_pred, 2).
+    other_valid: (num_others, T_pred) bool.
+    threshold_km: separation-violation threshold (200 ft by default -- see
+        MC_THRESHOLD_KM_200FT's docstring for why this differs from
+        SAFETY_MARGIN_KM).
+    num_samples: S. Defaults to 10x fewer than the case-study's S=1000
+        (MC_SAMPLES_DEFAULT=100): an aggregate statistic over hundreds of
+        thousands of rows already averages away each row's own per-sample
+        MC noise, so the extra precision a full S=1000 buys per row isn't
+        needed here, and this keeps a full-test-set run's compute cost an
+        order of magnitude lower. Pass num_samples=1000 to match the case
+        study exactly if that's ever needed instead.
+    rng: a numpy.random.Generator (caller-owned, e.g. one Generator built
+        once per process and reused across every row, for reproducibility
+        the same way seed_for_reproducible_ego_selection's seeding is
+        reused). Falls back to a fresh, unseeded Generator if omitted.
+
+    Returns 0.0 if there is no valid other agent at all (matches
+    min_separation's inf-distance / has_nearby_agent gate).
+    """
+    if other_xy.shape[0] == 0:
+        return 0.0
+    if rng is None:
+        rng = np.random.default_rng()
+    T_pred = ego_traj_abs.shape[0]
+    theta = np.radians(heading_deg)
+    ct, st = np.cos(theta), np.sin(theta)
+    sx = ego_sigma_rel[:, 0]  # (T_pred,)
+    sy = ego_sigma_rel[:, 1]
+    z = rng.standard_normal((num_samples, T_pred, 2))
+    # Same R(theta) @ diag(sigma_x, sigma_y) @ z rotation inv_transform
+    # applies to mu, applied here to a raw (sigma_x*z0, sigma_y*z1) offset
+    # instead -- see this function's own docstring for why ego_sigma_rel
+    # must be the pre-rotation sigma.
+    off_x = ct * sx[None, :] * z[..., 0] - st * sy[None, :] * z[..., 1]  # (S, T_pred)
+    off_y = st * sx[None, :] * z[..., 0] + ct * sy[None, :] * z[..., 1]  # (S, T_pred)
+    sample_x = ego_traj_abs[None, :, 0] + off_x  # (S, T_pred)
+    sample_y = ego_traj_abs[None, :, 1] + off_y  # (S, T_pred)
+
+    dx = sample_x[None, :, :] - other_xy[:, None, :, 0]  # (num_others, S, T_pred)
+    dy = sample_y[None, :, :] - other_xy[:, None, :, 1]
+    dist = np.sqrt(dx ** 2 + dy ** 2)
+    violated = dist < threshold_km
+    prob = violated.mean(axis=1)  # (num_others, T_pred) -- fraction of S samples that violate
+    if not other_valid.any():
+        return 0.0
+    return float(prob[other_valid].max())
 
 
 def select_candidates(df, criterion="near_miss", max_sep_km=SAFETY_MARGIN_KM):
@@ -283,14 +365,16 @@ def has_nearby_agent(min_sep_flat, relevance_radius_km=RELEVANCE_RADIUS_KM):
 
 
 def aggregate_risk(min_sep_flat, prob_flat, naive_idx, gate_pool_idx, ambiguous,
-                    safety_margin_km=SAFETY_MARGIN_KM):
+                    safety_margin_km=SAFETY_MARGIN_KM, risk_flat=None):
     """
     The four comparison strategies, computed uniformly over a flat list of N
     weighted hypotheses -- works the same whether N came from a two-stage
     model's mode x candidate grid, a plain multi-hypothesis baseline's raw H
     candidates, or a unimodal baseline's single (N=1) output.
 
-    min_sep_flat: (N,) minimum separation distance per hypothesis.
+    min_sep_flat: (N,) minimum separation distance per hypothesis. Only used
+        to derive the deterministic margin-violation risk_flat when the
+        caller doesn't already have one -- ignored if risk_flat is passed.
     prob_flat: (N,) probability per hypothesis; expected to sum to ~1.
     naive_idx: int, the index of the "as-deployed" hypothesis (e.g.
         argmax(prob_flat), or a model-specific hard-selection index).
@@ -301,12 +385,18 @@ def aggregate_risk(min_sep_flat, prob_flat, naive_idx, gate_pool_idx, ambiguous,
         AMBIGUITY_MARGIN (computed by the caller, since what counts as
         "top-1 vs top-2" differs: mode-level for two-stage, hypothesis-level
         for a flat multi-hypothesis baseline).
+    risk_flat: (N,) pre-computed per-hypothesis risk, e.g. from
+        mc_violation_risk (already a probability in [0, 1], not a distance)
+        -- pass this to aggregate over Monte Carlo risk instead of the
+        deterministic margin-violation proxy; min_sep_flat/safety_margin_km
+        are then unused.
 
     Returns a dict: risk_naive, risk_prob_weighted, risk_worst_case,
     risk_gated, strategy_divergence.
     """
-    risk_flat = np.where(
-        np.isfinite(min_sep_flat), np.maximum(0.0, safety_margin_km - min_sep_flat), 0.0)
+    if risk_flat is None:
+        risk_flat = np.where(
+            np.isfinite(min_sep_flat), np.maximum(0.0, safety_margin_km - min_sep_flat), 0.0)
 
     risk_naive = float(risk_flat[naive_idx])
     risk_worst_case = float(risk_flat.max())

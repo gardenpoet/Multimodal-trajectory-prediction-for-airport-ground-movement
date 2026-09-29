@@ -28,6 +28,19 @@ the SAFETY_MARGIN_KM/AMBIGUITY_MARGIN/RELEVANCE_RADIUS_KM rationale and
 for aggregate_risk(), the shared naive/prob_weighted/worst_case/gated
 math every model adapter in this folder reuses unchanged.
 
+Pass +risk_method=mc to switch the risk proxy from the deterministic
+max(0, SAFETY_MARGIN_KM - min_sep) margin above to
+common.mc_violation_risk's Monte Carlo separation-violation probability
+(Zhang et al. 2022 Eq. 9), the same methodology the case study
+(risk_assessment/case_risk_dynamics.py) uses -- 200 ft threshold by
+default (override with +mc_threshold_ft=), S=100 samples/timestep by
+default (override with +mc_samples=; the case study itself uses 1000,
+but an aggregate statistic over hundreds of thousands of rows doesn't
+need each row's own MC estimate to be as precise, so this trades some
+per-row precision for an order of magnitude less compute across the
+full test set). risk_method="margin" (the default) is untouched by any
+of this and matches every prior run of this script exactly.
+
 This is the AmeliaTF_main_two_phases_4T (two-stage) adapter specifically --
 risk_assessment/ lives at the top level of this repo, sibling to each
 model's own folder (AmeliaTF_main, AmeliaTF_main_two_phases_4T,
@@ -110,6 +123,7 @@ from risk_assessment.common import (
     to_device, min_separation, min_separation_with_type, has_nearby_agent,
     aggregate_risk, seed_for_reproducible_ego_selection, AMBIGUITY_MARGIN,
     SAFETY_MARGIN_KM, load_airport_ref, check_on_road,
+    mc_violation_risk, MC_THRESHOLD_KM_200FT, MC_SAMPLES_DEFAULT,
 )
 
 # Lazily built, one OffRoadEvaluator per airport (each load is a real cost:
@@ -148,7 +162,11 @@ def _mode_candidate_trajectories_abs(ego_mu, sequences, ego_ids, hist_len):
     ego_mu: (B, T_total, M, K, D) relative predicted trajectories (ego only).
     sequences: (B, A, T_total, D_seq) absolute per-agent sequences (whole scene).
     ego_ids: list[int] of length B.
-    Returns: (M, K, B, T_pred, 2) absolute XY per (mode, candidate).
+    Returns: (M, K, B, T_pred, 2) absolute XY per (mode, candidate), and
+    (B,) start_heading -- the SAME theta inv_transform_batch used to rotate
+    ego_mu into traj_abs, returned so a caller can apply the identical
+    rotation to ego_sigma (see mc_violation_risk's docstring for why sigma
+    needs this, not just mu).
     """
     B, T_total, M, K, D = ego_mu.shape
     T_pred = T_total - hist_len
@@ -167,7 +185,7 @@ def _mode_candidate_trajectories_abs(ego_mu, sequences, ego_ids, hist_len):
         for k in range(K):
             future_rel = ego_mu[:, hist_len:, m, k, :2].detach().cpu().numpy()  # (B, T_pred, 2)
             traj_abs[m, k] = inv_transform_batch(future_rel, start_abs, start_heading)
-    return traj_abs
+    return traj_abs, start_heading
 
 
 @hydra.main(version_base="1.3", config_path="../AmeliaTF_main_two_phases_4T/configs",
@@ -176,6 +194,18 @@ def main(cfg: DictConfig) -> None:
     output_csv = cfg.get("output_csv")
     if not output_csv:
         raise ValueError("Pass +output_csv=/path/to/cases.csv on the command line.")
+
+    # risk_method="margin" (default) preserves the original deterministic
+    # max(0, SAFETY_MARGIN_KM - min_sep) proxy exactly, unchanged.
+    # risk_method="mc" switches to mc_violation_risk (Zhang et al. 2022
+    # Eq. 9, 200 ft threshold by default) -- see common.py's docstrings for
+    # both. A fresh Generator per run, seeded from cfg.seed (defaults to the
+    # same 42 seed_for_reproducible_ego_selection uses), reused across every
+    # row for reproducibility.
+    risk_method = cfg.get("risk_method", "margin")
+    mc_threshold_km = (cfg.get("mc_threshold_ft") * 0.3048 / 1000.0) if cfg.get("mc_threshold_ft") else MC_THRESHOLD_KM_200FT
+    mc_samples = cfg.get("mc_samples", MC_SAMPLES_DEFAULT)
+    mc_rng = np.random.default_rng(cfg.get("seed", 42)) if risk_method == "mc" else None
 
     mode_net, traj_net, device = _build_nets(cfg)
 
@@ -257,6 +287,12 @@ def main(cfg: DictConfig) -> None:
 
             ego_probs = separate_ego_agent(mode_probs, ego_ids).squeeze(1)      # (B, M)
             ego_mu = separate_ego_agent(traj_mu, ego_ids).squeeze(1)            # (B, T_total, M, K, D)
+            # Computed by model.forward() regardless of risk_method, but only
+            # actually used (and only pulled off the GPU) when risk_method
+            # == "mc" -- see mc_violation_risk's docstring for why this must
+            # be the RAW (pre-inv_transform_batch) sigma, not the mu-frame's
+            # absolute one.
+            ego_sigma_t = separate_ego_agent(traj_sigma, ego_ids).squeeze(1) if risk_method == "mc" else None  # (B, T_total, M, K, D)
 
             feasibility = scene.get('turn_feasibility', None)
             if feasibility is not None:
@@ -295,8 +331,8 @@ def main(cfg: DictConfig) -> None:
             else:
                 cand_probs = np.ones((B, M, K), dtype=np.float64)
 
-            traj_abs = _mode_candidate_trajectories_abs(
-                ego_mu, sequences, ego_ids, hist_len)  # (M,K,B,T_pred,2)
+            traj_abs, start_heading = _mode_candidate_trajectories_abs(
+                ego_mu, sequences, ego_ids, hist_len)  # (M,K,B,T_pred,2), (B,)
 
             probs_np = ego_probs.detach().cpu().numpy()
             gt_mode_np = ego_true_mode.detach().cpu().numpy()
@@ -336,7 +372,23 @@ def main(cfg: DictConfig) -> None:
                 ])  # (M, K)
 
                 if not has_nearby_agent(min_sep):
-                    continue  # Filter 1: no scenario relevance, skip
+                    continue  # Filter 1: no scenario relevance, skip (cheap deterministic pre-filter, used regardless of risk_method)
+
+                # (M, K) Monte Carlo risk grid, only computed for samples
+                # that already passed the cheap deterministic pre-filter
+                # above -- mirrors min_sep's own (M, K) grid exactly, one
+                # mc_violation_risk call per (mode, candidate) hypothesis.
+                mc_risk = None
+                if risk_method == "mc":
+                    ego_sigma_b = ego_sigma_t[b, hist_len:].detach().cpu().numpy()  # (T_pred, M, K, D)
+                    mc_risk = np.array([
+                        [mc_violation_risk(
+                            traj_abs[m, k, b], ego_sigma_b[:, m, k, :2], start_heading[b],
+                            other_xy_arr, other_valid_arr,
+                            threshold_km=mc_threshold_km, num_samples=mc_samples, rng=mc_rng)
+                         for k in range(K)]
+                        for m in range(M)
+                    ])  # (M, K)
 
                 probs_b = probs_np[b]         # (M,)
                 cand_probs_b = cand_probs[b]  # (M, K), sums to 1 over K within each mode
@@ -365,7 +417,8 @@ def main(cfg: DictConfig) -> None:
                 gate_pool_idx = feas_idx * K + selected_k[feas_idx]
 
                 risk = aggregate_risk(
-                    min_sep_flat, joint_probs_flat, naive_idx, gate_pool_idx, ambiguous)
+                    min_sep_flat, joint_probs_flat, naive_idx, gate_pool_idx, ambiguous,
+                    risk_flat=(mc_risk.reshape(-1) if mc_risk is not None else None))
 
                 # Per-mode risk of the as-deployed (scorer-selected) candidate --
                 # what min_sep_{mode}/risk_score_{mode} report.

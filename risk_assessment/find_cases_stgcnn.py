@@ -83,6 +83,7 @@ from risk_assessment.common import (
     to_device, min_separation, min_separation_with_type, has_nearby_agent,
     aggregate_risk, seed_for_reproducible_ego_selection,
     load_airport_ref, check_on_road,
+    mc_violation_risk, MC_THRESHOLD_KM_200FT, MC_SAMPLES_DEFAULT,
 )
 
 GT_MODE_NAMES = TURN_MODES  # descriptive only -- see module docstring
@@ -107,16 +108,20 @@ def _ego_trajectory_abs(ego_mu, sequences, ego_ids, hist_len):
         hypothesis -- no H dim to loop over, unlike the other two adapters).
     sequences: (B, A, T_total, D_seq) absolute per-agent sequences (whole scene).
     ego_ids: list[int] of length B.
-    Returns: (B, T_pred, 2) absolute XY.
+    Returns: (B, T_pred, 2) absolute XY, and (B,) start_heading -- the SAME
+    theta inv_transform used to rotate ego_mu into traj_abs, returned so a
+    caller can apply the identical rotation to ego_sigma (see
+    common.mc_violation_risk's docstring for why).
     """
     B = ego_mu.shape[0]
     future_rel = ego_mu[..., :2].detach().cpu().numpy()  # (B, T_pred, 2)
     traj_abs = np.zeros_like(future_rel)
+    start_heading = np.zeros(B)
     for b in range(B):
         start_abs = sequences[b, ego_ids[b], hist_len - 1, G.XY].detach().cpu().numpy().flatten()
-        start_heading = float(sequences[b, ego_ids[b], hist_len - 1, G.HD].detach().cpu().item())
-        traj_abs[b] = inv_transform(future_rel[b], start_abs, start_heading)
-    return traj_abs
+        start_heading[b] = float(sequences[b, ego_ids[b], hist_len - 1, G.HD].detach().cpu().item())
+        traj_abs[b] = inv_transform(future_rel[b], start_abs, start_heading[b])
+    return traj_abs, start_heading
 
 
 @hydra.main(version_base="1.3", config_path="../STGCNN_baseline/configs",
@@ -130,6 +135,18 @@ def main(cfg: DictConfig) -> None:
         raise ValueError(
             "Pass train=false ckpt_path=/path/to/checkpoint.ckpt on the command line "
             "(same eval-only convention as this repo's own train_stgcnn_*.sh scripts).")
+
+    # See find_cases_two_stage.py's docstring for risk_method="mc"'s meaning
+    # and defaults -- identical flag here. Note this model's N=1 structure
+    # means naive/worst_case/prob_weighted/gated still collapse to the same
+    # number regardless of risk_method (nothing to diverge over) -- MC here
+    # only changes what that single shared number MEANS (a violation
+    # probability instead of a margin-violation distance), for
+    # cross-model-comparable units in the aggregate table.
+    risk_method = cfg.get("risk_method", "margin")
+    mc_threshold_km = (cfg.get("mc_threshold_ft") * 0.3048 / 1000.0) if cfg.get("mc_threshold_ft") else MC_THRESHOLD_KM_200FT
+    mc_samples = cfg.get("mc_samples", MC_SAMPLES_DEFAULT)
+    mc_rng = np.random.default_rng(cfg.get("seed", 42)) if risk_method == "mc" else None
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = hydra.utils.instantiate(cfg.model)
@@ -190,6 +207,7 @@ def main(cfg: DictConfig) -> None:
             scene_files = scene.get('scene_file')
 
             ego_mu = separate_ego_agent(mu, ego_ids).squeeze(1)  # (B, Tp, 2)
+            ego_sigma_t = separate_ego_agent(sigma, ego_ids).squeeze(1) if risk_method == "mc" else None  # (B, Tp, 2)
 
             rule_based = scene.get('rule_based_encoding')
             gt_mode_np = None
@@ -208,7 +226,7 @@ def main(cfg: DictConfig) -> None:
             # recover per-sample indexing.
             agent_types = agent_types.reshape(B, -1)
 
-            traj_abs = _ego_trajectory_abs(ego_mu, sequences, ego_ids, hist_len)  # (B, Tp, 2)
+            traj_abs, start_heading = _ego_trajectory_abs(ego_mu, sequences, ego_ids, hist_len)  # (B, Tp, 2), (B,)
 
             for b in range(B):
                 ego_id = ego_ids[b]
@@ -239,11 +257,20 @@ def main(cfg: DictConfig) -> None:
                 min_sep = np.array([min_separation(traj_abs[b], other_xy_arr, other_valid_arr)])  # (1,)
 
                 if not has_nearby_agent(min_sep):
-                    continue  # Filter 1: no scenario relevance, skip
+                    continue  # Filter 1: no scenario relevance, skip (cheap deterministic pre-filter, used regardless of risk_method)
+
+                mc_risk = None
+                if risk_method == "mc":
+                    ego_sigma_b = ego_sigma_t[b, :, :2].detach().cpu().numpy()  # (Tp, 2)
+                    mc_risk = np.array([mc_violation_risk(
+                        traj_abs[b], ego_sigma_b, start_heading[b],
+                        other_xy_arr, other_valid_arr,
+                        threshold_km=mc_threshold_km, num_samples=mc_samples, rng=mc_rng)])  # (1,)
 
                 probs_b = np.array([1.0])  # single hypothesis, probability 1
                 risk = aggregate_risk(min_sep, probs_b, naive_idx=0,
-                                       gate_pool_idx=np.array([0]), ambiguous=False)
+                                       gate_pool_idx=np.array([0]), ambiguous=False,
+                                       risk_flat=mc_risk)
 
                 # For case-study screening only -- see find_cases_two_stage.py's
                 # equivalent comment (ground service vehicles legitimately
