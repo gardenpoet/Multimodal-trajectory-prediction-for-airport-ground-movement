@@ -81,7 +81,7 @@ from amelia_tf.utils.off_road_evaluator import OffRoadEvaluator
 from amelia_scenes.utils.transform_utils import inv_transform
 
 from risk_assessment.common import (
-    to_device, min_separation, min_separation_with_type, has_nearby_agent,
+    to_device, min_separation, min_separation_with_type,
     aggregate_risk, seed_for_reproducible_ego_selection, AMBIGUITY_MARGIN,
     load_airport_ref, check_on_road,
     mc_violation_risk, MC_THRESHOLD_KM_200FT, MC_SAMPLES_DEFAULT,
@@ -284,8 +284,9 @@ def main(cfg: DictConfig) -> None:
                     for h in range(H)
                 ])  # (H,)
 
-                if not has_nearby_agent(min_sep):
-                    continue  # Filter 1: no scenario relevance, skip (cheap deterministic pre-filter, used regardless of risk_method)
+                # No relevance pre-filter -- see find_cases_two_stage.py's
+                # equivalent comment: every sample is kept, with all_zero_risk
+                # marking the ones with no nearby agent at all.
 
                 mc_risk = None
                 if risk_method == "mc":
@@ -300,11 +301,27 @@ def main(cfg: DictConfig) -> None:
 
                 probs_b = probs_np[b]  # (H,), already a genuine softmax over H
                 naive_idx = int(probs_b.argmax())
-                gate_pool_idx = np.arange(H)  # no feasibility concept for this model
 
-                sorted_probs = np.sort(probs_b)[::-1]
+                # No feasibility concept for this model, so the gate pool is
+                # hypotheses rather than modes, but the same chaining logic
+                # applies: only the cluster of hypotheses mutually within
+                # AMBIGUITY_MARGIN of each other, not every one of the H
+                # hypotheses regardless of how far its own probability is
+                # from the contested top ones -- see find_cases_two_stage.py's
+                # equivalent comment for why (this used to make gated
+                # indistinguishable from plain worst-case whenever ambiguous
+                # fired).
+                order = np.argsort(probs_b)[::-1]
+                sorted_probs = probs_b[order]
                 ambiguous = bool((sorted_probs[0] - sorted_probs[1]) < AMBIGUITY_MARGIN) \
                     if H >= 2 else False
+                gate_pool_idx = np.array([], dtype=int)
+                if ambiguous:
+                    group_end = 1
+                    while (group_end < H
+                           and sorted_probs[group_end - 1] - sorted_probs[group_end] < AMBIGUITY_MARGIN):
+                        group_end += 1
+                    gate_pool_idx = order[:group_end]
 
                 risk = aggregate_risk(
                     min_sep, probs_b, naive_idx, gate_pool_idx, ambiguous,
@@ -386,6 +403,9 @@ def main(cfg: DictConfig) -> None:
                     "num_candidates": H,
                     "ambiguous": ambiguous,
                     **risk,
+                    "all_zero_risk": bool(
+                        risk["risk_naive"] == 0.0 and risk["risk_worst_case"] == 0.0
+                        and risk["risk_prob_weighted"] == 0.0 and risk["risk_gated"] == 0.0),
                     "top1_min_sep_km": (
                         float(min_sep[naive_idx]) if np.isfinite(min_sep[naive_idx]) else None),
                     "top1_min_sep_agent_type": AGENT_TYPE_NAMES.get(top1_closest_type),
@@ -403,13 +423,15 @@ def main(cfg: DictConfig) -> None:
                 rows.append(row)
 
             if batch_idx % 50 == 0:
-                print(f"[find_cases] processed batch {batch_idx}, {len(rows)} relevant samples so far")
+                print(f"[find_cases] processed batch {batch_idx}, {len(rows)} samples so far")
 
     df = pd.DataFrame(rows)
     df.to_csv(output_csv, index=False)
     print(f"[find_cases] wrote {len(df)} rows to {output_csv}")
-    print(f"[find_cases] ambiguous rate: {df['ambiguous'].mean():.3f}")
-    print(f"[find_cases] strategy_divergence rate: {df['strategy_divergence'].mean():.3f}")
+    print(f"[find_cases] all_zero_risk rate (excluded from the stats below): {df['all_zero_risk'].mean():.3f}")
+    relevant = df[~df["all_zero_risk"]]
+    print(f"[find_cases] ambiguous rate: {relevant['ambiguous'].mean():.3f}")
+    print(f"[find_cases] strategy_divergence rate: {relevant['strategy_divergence'].mean():.3f}")
 
 
 if __name__ == "__main__":

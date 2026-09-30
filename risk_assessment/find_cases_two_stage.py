@@ -120,7 +120,7 @@ from amelia_tf.utils.off_road_evaluator import OffRoadEvaluator
 from amelia_scenes.utils.transform_utils import inv_transform_batch
 
 from risk_assessment.common import (
-    to_device, min_separation, min_separation_with_type, has_nearby_agent,
+    to_device, min_separation, min_separation_with_type,
     aggregate_risk, seed_for_reproducible_ego_selection, AMBIGUITY_MARGIN,
     SAFETY_MARGIN_KM, load_airport_ref, check_on_road,
     mc_violation_risk, MC_THRESHOLD_KM_200FT, MC_SAMPLES_DEFAULT,
@@ -371,13 +371,16 @@ def main(cfg: DictConfig) -> None:
                     for m in range(M)
                 ])  # (M, K)
 
-                if not has_nearby_agent(min_sep):
-                    continue  # Filter 1: no scenario relevance, skip (cheap deterministic pre-filter, used regardless of risk_method)
+                # No relevance pre-filter: every sample is computed and kept,
+                # including scenes with no nearby agent at all (risk is then
+                # genuinely 0 for every strategy, not silently dropped). See
+                # all_zero_risk below for how the aggregate table excludes
+                # these rows from its own rate/mean statistics while still
+                # reporting what fraction of the test set they are.
 
-                # (M, K) Monte Carlo risk grid, only computed for samples
-                # that already passed the cheap deterministic pre-filter
-                # above -- mirrors min_sep's own (M, K) grid exactly, one
-                # mc_violation_risk call per (mode, candidate) hypothesis.
+                # (M, K) Monte Carlo risk grid -- mirrors min_sep's own (M, K)
+                # grid exactly, one mc_violation_risk call per (mode,
+                # candidate) hypothesis.
                 mc_risk = None
                 if risk_method == "mc":
                     ego_sigma_b = ego_sigma_t[b, hist_len:].detach().cpu().numpy()  # (T_pred, M, K, D)
@@ -402,19 +405,37 @@ def main(cfg: DictConfig) -> None:
                 feas_b = ego_feas[b]
                 feas_idx = np.where(feas_b)[0]
                 ambiguous = False
+                ambiguous_group_idx = np.array([], dtype=int)
                 if feas_idx.size >= 2:
-                    feas_probs = np.sort(probs_b[feas_idx])[::-1]
-                    ambiguous = bool((feas_probs[0] - feas_probs[1]) < AMBIGUITY_MARGIN)
+                    order = feas_idx[np.argsort(probs_b[feas_idx])[::-1]]
+                    feas_probs_sorted = probs_b[order]
+                    ambiguous = bool((feas_probs_sorted[0] - feas_probs_sorted[1]) < AMBIGUITY_MARGIN)
+                    if ambiguous:
+                        # Chain the sorted feasible modes together while each
+                        # consecutive gap stays under the margin, stopping at
+                        # the first gap that doesn't -- this keeps the gated
+                        # pool to the cluster of intentions the model is
+                        # actually torn between, not every feasible intention
+                        # regardless of how far its own probability is from
+                        # the contested pair (that made gated indistinguishable
+                        # from a feasibility-restricted worst-case whenever it
+                        # fired, rather than a genuinely intermediate strategy).
+                        group_end = 1
+                        while (group_end < len(order)
+                               and feas_probs_sorted[group_end - 1] - feas_probs_sorted[group_end]
+                               < AMBIGUITY_MARGIN):
+                            group_end += 1
+                        ambiguous_group_idx = order[:group_end]
 
                 # Flatten the (M, K) grid to the flat hypothesis list aggregate_risk
                 # expects. naive uses (argmax_mode, its scorer-selected candidate);
-                # the gated pool is each FEASIBLE mode's own scorer-selected
-                # candidate (not every (mode, candidate) pair in a feasible mode),
-                # matching how this was computed before the shared-module refactor.
+                # the gated pool is each mode IN THE AMBIGUOUS CLUSTER's own
+                # scorer-selected candidate (empty, i.e. unused, when not
+                # ambiguous -- aggregate_risk falls back to naive then anyway).
                 min_sep_flat = min_sep.reshape(-1)
                 joint_probs_flat = joint_probs.reshape(-1)
                 naive_idx = argmax_mode * K + selected_k[argmax_mode]
-                gate_pool_idx = feas_idx * K + selected_k[feas_idx]
+                gate_pool_idx = ambiguous_group_idx * K + selected_k[ambiguous_group_idx]
 
                 risk = aggregate_risk(
                     min_sep_flat, joint_probs_flat, naive_idx, gate_pool_idx, ambiguous,
@@ -516,8 +537,12 @@ def main(cfg: DictConfig) -> None:
                     "mode_error": mode_error,
                     "ambiguous": ambiguous,
                     "feasible_modes": ",".join(MODE_NAMES[i] for i in feas_idx),
+                    "ambiguous_group": ",".join(MODE_NAMES[i] for i in ambiguous_group_idx),
                     "num_candidates": K,
                     **risk,
+                    "all_zero_risk": bool(
+                        risk["risk_naive"] == 0.0 and risk["risk_worst_case"] == 0.0
+                        and risk["risk_prob_weighted"] == 0.0 and risk["risk_gated"] == 0.0),
                     "scene_min_sep_gt": (
                         float(min_sep[gt_mode, selected_k[gt_mode]])
                         if np.isfinite(min_sep[gt_mode, selected_k[gt_mode]]) else None),
@@ -541,14 +566,16 @@ def main(cfg: DictConfig) -> None:
                 rows.append(row)
 
             if batch_idx % 50 == 0:
-                print(f"[find_cases] processed batch {batch_idx}, {len(rows)} relevant samples so far")
+                print(f"[find_cases] processed batch {batch_idx}, {len(rows)} samples so far")
 
     df = pd.DataFrame(rows)
     df.to_csv(output_csv, index=False)
     print(f"[find_cases] wrote {len(df)} rows to {output_csv}")
-    print(f"[find_cases] mode_error rate: {df['mode_error'].mean():.3f}")
-    print(f"[find_cases] ambiguous rate: {df['ambiguous'].mean():.3f}")
-    print(f"[find_cases] strategy_divergence rate: {df['strategy_divergence'].mean():.3f}")
+    print(f"[find_cases] all_zero_risk rate (excluded from the stats below): {df['all_zero_risk'].mean():.3f}")
+    relevant = df[~df["all_zero_risk"]]
+    print(f"[find_cases] mode_error rate: {relevant['mode_error'].mean():.3f}")
+    print(f"[find_cases] ambiguous rate: {relevant['ambiguous'].mean():.3f}")
+    print(f"[find_cases] strategy_divergence rate: {relevant['strategy_divergence'].mean():.3f}")
 
 
 if __name__ == "__main__":
