@@ -352,6 +352,7 @@ def main(cfg: DictConfig) -> None:
                     "all_zero_risk": bool(
                         risk["risk_naive"] == 0.0 and risk["risk_worst_case"] == 0.0
                         and risk["risk_prob_weighted"] == 0.0 and risk["risk_gated"] == 0.0),
+                    "gated_diverges": bool(risk["risk_gated"] > risk["risk_naive"]),  # always False: N=1, ambiguous is always False
                     "top1_min_sep_km": float(min_sep[0]) if np.isfinite(min_sep[0]) else None,
                     "top1_min_sep_agent_type": AGENT_TYPE_NAMES.get(top1_closest_type),
                     "top1_min_sep_on_road": top1_on_road,

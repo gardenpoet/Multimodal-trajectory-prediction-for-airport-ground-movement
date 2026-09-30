@@ -406,6 +406,7 @@ def main(cfg: DictConfig) -> None:
                     "all_zero_risk": bool(
                         risk["risk_naive"] == 0.0 and risk["risk_worst_case"] == 0.0
                         and risk["risk_prob_weighted"] == 0.0 and risk["risk_gated"] == 0.0),
+                    "gated_diverges": bool(risk["risk_gated"] > risk["risk_naive"]),
                     "top1_min_sep_km": (
                         float(min_sep[naive_idx]) if np.isfinite(min_sep[naive_idx]) else None),
                     "top1_min_sep_agent_type": AGENT_TYPE_NAMES.get(top1_closest_type),
@@ -432,6 +433,8 @@ def main(cfg: DictConfig) -> None:
     relevant = df[~df["all_zero_risk"]]
     print(f"[find_cases] ambiguous rate: {relevant['ambiguous'].mean():.3f}")
     print(f"[find_cases] strategy_divergence rate: {relevant['strategy_divergence'].mean():.3f}")
+    print(f"[find_cases] gated_diverges rate (ambiguous & gated > naive): {relevant['gated_diverges'].mean():.3f}, "
+          f"{int(relevant['gated_diverges'].sum())} rows")
 
 
 if __name__ == "__main__":

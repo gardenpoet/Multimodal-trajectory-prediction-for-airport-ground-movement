@@ -543,6 +543,15 @@ def main(cfg: DictConfig) -> None:
                     "all_zero_risk": bool(
                         risk["risk_naive"] == 0.0 and risk["risk_worst_case"] == 0.0
                         and risk["risk_prob_weighted"] == 0.0 and risk["risk_gated"] == 0.0),
+                    # True exactly when the ambiguity-gated strategy actually
+                    # found something worse than naive within the ambiguous
+                    # cluster -- gated >= naive always holds when ambiguous
+                    # (naive's own mode is itself in the cluster), so this is
+                    # the direct "did gating do anything here" flag, meant
+                    # for screening future case-study candidates without
+                    # having to guess at per-mode probabilities from a
+                    # deterministic proxy first.
+                    "gated_diverges": bool(risk["risk_gated"] > risk["risk_naive"]),
                     "scene_min_sep_gt": (
                         float(min_sep[gt_mode, selected_k[gt_mode]])
                         if np.isfinite(min_sep[gt_mode, selected_k[gt_mode]]) else None),
@@ -576,6 +585,8 @@ def main(cfg: DictConfig) -> None:
     print(f"[find_cases] mode_error rate: {relevant['mode_error'].mean():.3f}")
     print(f"[find_cases] ambiguous rate: {relevant['ambiguous'].mean():.3f}")
     print(f"[find_cases] strategy_divergence rate: {relevant['strategy_divergence'].mean():.3f}")
+    print(f"[find_cases] gated_diverges rate (ambiguous & gated > naive): {relevant['gated_diverges'].mean():.3f}, "
+          f"{int(relevant['gated_diverges'].sum())} rows -- see gated_diverges/ambiguous_group columns to screen case-study candidates")
 
 
 if __name__ == "__main__":
