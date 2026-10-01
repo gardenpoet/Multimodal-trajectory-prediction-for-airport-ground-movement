@@ -1,7 +1,7 @@
 #!/bin/bash
-# Continuous-prediction grid, frame=2178 / Amelia-TF baseline cell -- see
-# run_case_risk_dynamics_kbos_b7s62_f2178_1T.sh for the full case
-# description. scene_file passed directly (not in any ranked CSV).
+# Dense 50-frame continuous-prediction series, frame=2178 / Amelia-TF
+# baseline cell. scene_file passed directly (not in any ranked CSV);
+# n-suffix matches this frame's own baseline-pipeline scene chunking.
 #
 # Run from the repo root:
 #   sbatch risk_assessment/run_case_trajectories_kbos_b7s62_f2178_amelia_baseline.sh

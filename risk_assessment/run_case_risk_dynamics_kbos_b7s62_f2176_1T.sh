@@ -1,10 +1,8 @@
 #!/bin/bash
-# Continuous-prediction grid (advisor-requested 5x5: 5 models x 5 current-time
-# frames, 2s apart, same confirmed near-miss case KBOS b7/s62 / scene
-# kbos/KBOS_701_1675098000) -- this is the frame=2176 / 1T cell.
-# batch_idx/sample_idx taken from the TP-4T full-test-set CSV's own indexing
-# for this frame (same dataloader ordering is reused for 1T/2T/4T, same
-# convention as the existing b3s70/b300s35 case scripts).
+# Dense 50-frame continuous-prediction series, frame=2176 / 1T cell.
+# Part of the 2176-2225 gap-free extension -- see
+# run_case_risk_dynamics_kbos_b7s62_f2176_1T.sh (the first frame's own
+# script) for the full series description.
 #
 # Run from the repo root:
 #   sbatch risk_assessment/run_case_risk_dynamics_kbos_b7s62_f2176_1T.sh

@@ -1,7 +1,8 @@
 #!/bin/bash
-# Continuous-prediction grid, frame=2178 / 2T cell -- see
-# run_case_risk_dynamics_kbos_b7s62_f2178_1T.sh for the full case
-# description.
+# Dense 50-frame continuous-prediction series, frame=2178 / 2T cell.
+# Part of the 2176-2225 gap-free extension -- see
+# run_case_risk_dynamics_kbos_b7s62_f2176_1T.sh (the first frame's own
+# script) for the full series description.
 #
 # Run from the repo root:
 #   sbatch risk_assessment/run_case_risk_dynamics_kbos_b7s62_f2178_2T.sh

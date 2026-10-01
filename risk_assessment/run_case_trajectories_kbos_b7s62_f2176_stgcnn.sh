@@ -1,7 +1,8 @@
 #!/bin/bash
-# Continuous-prediction grid, frame=2176 / STGCNN cell -- see
-# run_case_risk_dynamics_kbos_b7s62_f2176_1T.sh for the full case
-# description. scene_file passed directly (not in any ranked CSV).
+# Dense 50-frame continuous-prediction series, frame=2176 / STGCNN cell.
+# scene_file passed directly (not in any ranked CSV); n-suffix matches this
+# frame's own STGCNN-pipeline scene chunking (confirmed per-frame, not
+# assumed equal to the two-stage model's own n-5 naming).
 #
 # Run from the repo root:
 #   sbatch risk_assessment/run_case_trajectories_kbos_b7s62_f2176_stgcnn.sh
