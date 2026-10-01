@@ -1,0 +1,313 @@
+#!/bin/bash
+# Submits all 250 jobs (frames 184-233 x [1T,2T,4T dynamics +
+# stgcnn,amelia_baseline trajectories]) for a gap-free, second-by-second
+# continuous-prediction series on the b3/s70 (near-zero-probability alternative) case (same pattern as the
+# b7/s62 dense-50-frame batch).
+#
+# Run from the repo root:
+#   bash risk_assessment/submit_kbos_b3s70_dense50.sh
+
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f184_1T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f184_2T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f184_4T.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f184_stgcnn.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f184_amelia_baseline.sh"
+
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f185_1T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f185_2T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f185_4T.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f185_stgcnn.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f185_amelia_baseline.sh"
+
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f186_1T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f186_2T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f186_4T.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f186_stgcnn.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f186_amelia_baseline.sh"
+
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f187_1T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f187_2T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f187_4T.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f187_stgcnn.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f187_amelia_baseline.sh"
+
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f188_1T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f188_2T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f188_4T.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f188_stgcnn.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f188_amelia_baseline.sh"
+
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f189_1T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f189_2T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f189_4T.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f189_stgcnn.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f189_amelia_baseline.sh"
+
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f190_1T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f190_2T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f190_4T.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f190_stgcnn.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f190_amelia_baseline.sh"
+
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f191_1T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f191_2T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f191_4T.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f191_stgcnn.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f191_amelia_baseline.sh"
+
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f192_1T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f192_2T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f192_4T.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f192_stgcnn.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f192_amelia_baseline.sh"
+
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f193_1T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f193_2T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f193_4T.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f193_stgcnn.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f193_amelia_baseline.sh"
+
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f194_1T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f194_2T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f194_4T.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f194_stgcnn.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f194_amelia_baseline.sh"
+
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f195_1T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f195_2T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f195_4T.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f195_stgcnn.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f195_amelia_baseline.sh"
+
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f196_1T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f196_2T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f196_4T.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f196_stgcnn.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f196_amelia_baseline.sh"
+
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f197_1T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f197_2T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f197_4T.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f197_stgcnn.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f197_amelia_baseline.sh"
+
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f198_1T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f198_2T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f198_4T.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f198_stgcnn.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f198_amelia_baseline.sh"
+
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f199_1T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f199_2T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f199_4T.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f199_stgcnn.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f199_amelia_baseline.sh"
+
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f200_1T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f200_2T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f200_4T.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f200_stgcnn.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f200_amelia_baseline.sh"
+
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f201_1T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f201_2T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f201_4T.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f201_stgcnn.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f201_amelia_baseline.sh"
+
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f202_1T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f202_2T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f202_4T.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f202_stgcnn.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f202_amelia_baseline.sh"
+
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f203_1T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f203_2T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f203_4T.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f203_stgcnn.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f203_amelia_baseline.sh"
+
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f204_1T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f204_2T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f204_4T.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f204_stgcnn.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f204_amelia_baseline.sh"
+
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f205_1T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f205_2T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f205_4T.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f205_stgcnn.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f205_amelia_baseline.sh"
+
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f206_1T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f206_2T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f206_4T.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f206_stgcnn.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f206_amelia_baseline.sh"
+
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f207_1T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f207_2T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f207_4T.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f207_stgcnn.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f207_amelia_baseline.sh"
+
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f208_1T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f208_2T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f208_4T.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f208_stgcnn.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f208_amelia_baseline.sh"
+
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f209_1T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f209_2T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f209_4T.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f209_stgcnn.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f209_amelia_baseline.sh"
+
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f210_1T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f210_2T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f210_4T.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f210_stgcnn.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f210_amelia_baseline.sh"
+
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f211_1T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f211_2T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f211_4T.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f211_stgcnn.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f211_amelia_baseline.sh"
+
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f212_1T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f212_2T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f212_4T.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f212_stgcnn.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f212_amelia_baseline.sh"
+
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f213_1T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f213_2T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f213_4T.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f213_stgcnn.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f213_amelia_baseline.sh"
+
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f214_1T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f214_2T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f214_4T.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f214_stgcnn.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f214_amelia_baseline.sh"
+
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f215_1T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f215_2T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f215_4T.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f215_stgcnn.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f215_amelia_baseline.sh"
+
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f216_1T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f216_2T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f216_4T.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f216_stgcnn.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f216_amelia_baseline.sh"
+
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f217_1T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f217_2T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f217_4T.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f217_stgcnn.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f217_amelia_baseline.sh"
+
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f218_1T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f218_2T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f218_4T.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f218_stgcnn.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f218_amelia_baseline.sh"
+
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f219_1T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f219_2T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f219_4T.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f219_stgcnn.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f219_amelia_baseline.sh"
+
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f220_1T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f220_2T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f220_4T.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f220_stgcnn.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f220_amelia_baseline.sh"
+
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f221_1T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f221_2T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f221_4T.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f221_stgcnn.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f221_amelia_baseline.sh"
+
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f222_1T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f222_2T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f222_4T.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f222_stgcnn.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f222_amelia_baseline.sh"
+
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f223_1T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f223_2T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f223_4T.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f223_stgcnn.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f223_amelia_baseline.sh"
+
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f224_1T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f224_2T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f224_4T.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f224_stgcnn.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f224_amelia_baseline.sh"
+
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f225_1T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f225_2T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f225_4T.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f225_stgcnn.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f225_amelia_baseline.sh"
+
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f226_1T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f226_2T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f226_4T.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f226_stgcnn.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f226_amelia_baseline.sh"
+
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f227_1T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f227_2T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f227_4T.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f227_stgcnn.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f227_amelia_baseline.sh"
+
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f228_1T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f228_2T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f228_4T.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f228_stgcnn.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f228_amelia_baseline.sh"
+
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f229_1T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f229_2T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f229_4T.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f229_stgcnn.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f229_amelia_baseline.sh"
+
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f230_1T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f230_2T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f230_4T.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f230_stgcnn.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f230_amelia_baseline.sh"
+
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f231_1T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f231_2T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f231_4T.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f231_stgcnn.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f231_amelia_baseline.sh"
+
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f232_1T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f232_2T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f232_4T.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f232_stgcnn.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f232_amelia_baseline.sh"
+
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f233_1T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f233_2T.sh"
+sbatch "risk_assessment/run_case_risk_dynamics_kbos_b3s70_f233_4T.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f233_stgcnn.sh"
+sbatch "risk_assessment/run_case_trajectories_kbos_b3s70_f233_amelia_baseline.sh"
+
+echo "Submitted 250 jobs."
