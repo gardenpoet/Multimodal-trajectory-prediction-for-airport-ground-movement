@@ -1,7 +1,9 @@
 #!/bin/bash
-# Dense 50-frame continuous-prediction series (b762/s32 (ambiguous intention)), frame=1125 / Amelia-TF baseline cell.
-# scene_file passed directly (not in any ranked CSV); n-suffix confirmed
-# to match the two-stage model's own naming for every frame in this window.
+# Dense 50-frame continuous-prediction series (b762/s32), frame=1125 / Amelia-TF baseline cell.
+# scene_file's n-suffix looked up per frame from the bulk CSV (NOT
+# hardcoded n-5 -- that was a real bug in the first generation of this
+# script, which caused every frame in this case to fail, since this
+# scenario's real agent count is never 5).
 #
 # Run from the repo root:
 #   sbatch risk_assessment/run_case_trajectories_kbos_b762s32_f1125_amelia_baseline.sh
@@ -30,5 +32,5 @@ mkdir -p "$(dirname "$OUT_JSON")"
 python -m risk_assessment.case_trajectories_amelia_baseline \
     --config-name=eval_kbos \
     +data.dataset.config.random_ego=false \
-    +case_scene_file=kbos/KBOS_148_1673060400/001125_n-5.pkl \
+    +case_scene_file=kbos/KBOS_148_1673060400/001125_n-4.pkl \
     +output_json="$OUT_JSON"
