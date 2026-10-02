@@ -81,6 +81,11 @@ class BaseDataset(Dataset):
         # most likely to interact with others, which is what a risk-focused
         # case study wants anyway).
         self.random_ego = getattr(config, 'random_ego', True)
+        # Which agent index becomes ego when random_ego=False. Lets a
+        # risk-assessment case script request the SAME scene's interactive
+        # agent as ego (ego/ref swapped), e.g. for a both-sides-predicted
+        # risk comparison, via +data.dataset.config.ego_agent_id=<idx>.
+        self.ego_agent_id = getattr(config, 'ego_agent_id', 0)
 
     def set_split_list(self, split_path: str) -> None:
         with open(split_path, 'r') as fp:

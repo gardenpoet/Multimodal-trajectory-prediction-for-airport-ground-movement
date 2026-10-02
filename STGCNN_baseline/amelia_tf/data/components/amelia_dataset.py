@@ -340,8 +340,8 @@ class AmeliaDataset(BaseDataset):
             ego_agent = random.randint(a=0, b=num_agents-1)
 
         else:
-            ego_agent = 0
-            
+            ego_agent = ego_agent_id
+
         ego_agent_test = ego_agent
 
         sequences   = sequences[agents_in_scene]
@@ -516,4 +516,5 @@ class AmeliaDataset(BaseDataset):
         # day-folder/filename, stripped of the repo-specific prefix) is,
         # since it identifies the underlying raw scene file itself.
         scene_file = os.path.relpath(str(item), self.in_data_dir)
-        return self.transform_scene_data(data, scene_file=scene_file, random_ego=self.random_ego)
+        return self.transform_scene_data(
+            data, scene_file=scene_file, random_ego=self.random_ego, ego_agent_id=self.ego_agent_id)
