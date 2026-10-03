@@ -1,0 +1,301 @@
+diff --git a/descent/data/dataset.py b/descent/data/dataset.py
+index fc0fd6f..76a3796 100644
+--- a/descent/data/dataset.py
++++ b/descent/data/dataset.py
+@@ -248,12 +248,24 @@ class DescentDataset(Dataset):
+         agent_types = torch.tensor(scene_data["agent_types"])
+         agent_types = agent_types[agents_in_scene].view(-1)
+ 
++        # Our own scene files carry a 'mode_labels' list (one entry per agent of the
++        # ORIGINAL, unfiltered agent order), e.g. "TurnLeft_Accel"; keep only the ego
++        # agent's turn category (the part before '_') for our own per-mode evaluation,
++        # matching amelia_tf.utils.modes.TURN_MODE_MAP's normalisation.
++        mode_labels_all = scene_data.get("mode_labels")
++        orig_ego_idx = agents_in_scene[i]
++        if mode_labels_all is not None and orig_ego_idx < len(mode_labels_all):
++            ego_mode_label = str(mode_labels_all[orig_ego_idx]).split("_")[0]
++        else:
++            ego_mode_label = "Unknown"
++
+         return {
+             "scenario_id": scene_data["scenario_id"],
+             "airport_id": airport_id,
+             "agent_types": agent_types,
+             "agent_masks": agent_masks,
+             "ego_agent_id": ego_agent,
++            "ego_mode_label": ego_mode_label,
+             "num_agents": sequences.shape[0],
+             "rel_sequences": rel_sequences,
+             "custom_context": local_context,
+@@ -272,7 +284,7 @@ class DescentDataset(Dataset):
+ 
+         input_dict = {}
+         for key, val_list in key_to_list.items():
+-            if key in ["scenario_id", "airport_id", "ego_agent_id", "num_agents"]:
++            if key in ["scenario_id", "airport_id", "ego_agent_id", "num_agents", "ego_mode_label"]:
+                 input_dict[key] = np.asarray(val_list)
+             elif key == "rel_sequences":
+                 val_list = [torch.from_numpy(x) for x in val_list]
+diff --git a/descent/models/trajpred.py b/descent/models/trajpred.py
+index f199f7a..545d03e 100644
+--- a/descent/models/trajpred.py
++++ b/descent/models/trajpred.py
+@@ -13,8 +13,14 @@ from torchmetrics import MeanMetric
+ from descent.utils import global_masks as G
+ from descent.utils.losses import marginal_loss
+ from descent.utils.metrics import marginal_ade, marginal_fde
++from descent.utils.our_metrics import compute_mode_rmse, compute_nll, mode_ade, mode_fde
+ from descent.utils.utils import separate_ego_agent
+ 
++# Turn categories our own scene files label the ego agent with (mode_labels, e.g.
++# "TurnLeft_Accel"); see amelia_tf.utils.modes.TURN_MODE_MAP for the canonical mapping
++# this mirrors. "All" aggregates across every category, same as DESCENT's own minADE/minFDE.
++OUR_TURN_MODES = ["TurnLeft", "TurnRight", "Straight", "Hold", "All"]
++
+ 
+ class TrajPred(LightningModule):
+     """Trains and evaluates a marginal trajectory predictor.
+@@ -64,6 +70,24 @@ class TrajPred(LightningModule):
+         self.test_seen_ade, self.test_seen_fde = self.airport_metrics(self.seen_airports)
+         self.test_unseen_ade, self.test_unseen_fde = self.airport_metrics(self.unseen_airports)
+ 
++        # Our own max-probability-selection metrics (RMSE, NLL, PADE, PFDE), test split only,
++        # broken down by the ego agent's turn category (see OUR_TURN_MODES) so they match the
++        # per-mode table we report for STGCNN/Amelia-TF/TP. DESCENT's own minADE/minFDE above
++        # are oracle (best-of-H) and airport-only; these are additional, not replacements.
++        self.test_rmse, self.test_nll, self.test_pade, self.test_pfde = {}, {}, {}, {}
++        for t in self.pred_lens:
++            tkey = self.horizon_key(t)
++            for mode in OUR_TURN_MODES:
++                mkey = f"{mode}_{tkey}"
++                self.test_rmse[mkey] = MeanMetric()
++                self.test_nll[mkey] = MeanMetric()
++                self.test_pade[mkey] = MeanMetric()
++                self.test_pfde[mkey] = MeanMetric()
++        self.test_rmse = nn.ModuleDict(self.test_rmse)
++        self.test_nll = nn.ModuleDict(self.test_nll)
++        self.test_pade = nn.ModuleDict(self.test_pade)
++        self.test_pfde = nn.ModuleDict(self.test_pfde)
++
+     def horizon_key(self, t: int) -> str:
+         """Metric key of a horizon; the longest one is 't=max'."""
+         return "t=max" if t == self.max_pred_len else f"t={t}"
+@@ -128,11 +152,15 @@ class TrajPred(LightningModule):
+ 
+     def evaluation_step(self, batch: Any, split: str):
+         """Shared validation/test step: logs the loss, minADE/minFDE and per-airport metrics."""
+-        loss, _, mu, _, fut_rel = self.model_step(batch)
++        loss, pred_scores, mu, sigma, fut_rel = self.model_step(batch)
+         ego_agent = batch["scene_dict"]["ego_agent_id"]
+         ego_mu = separate_ego_agent(mu, ego_agent)
+         ego_fut = separate_ego_agent(fut_rel, ego_agent)
+         mask = separate_ego_agent(batch["scene_dict"]["agent_masks"], ego_agent)
++        # Only needed for our own test-time metrics below; pred_scores are raw mode logits
++        # (see descent.utils.losses.marginal_loss's F.cross_entropy call), so softmax them.
++        ego_sigma = separate_ego_agent(sigma, ego_agent)
++        ego_scores = torch.softmax(separate_ego_agent(pred_scores, ego_agent), dim=-1)
+ 
+         loss_metric = self.val_loss if split == "val" else self.test_loss
+         loss_metric(loss)
+@@ -199,6 +227,42 @@ class TrajPred(LightningModule):
+                     ap_fde[key](marginal_fde(mu_t, fut_t, mask=mask_t))
+                     self.log(f"{prefix}_fde/{key}", ap_fde[key], on_step=False, on_epoch=True)
+ 
++        # Our own max-probability-selection metrics (RMSE/NLL/PADE/PFDE), test split only: these
++        # are never needed for early stopping/checkpoint selection (that's val_ade/t=max), so they
++        # only run once, at the very end, after training is already complete and checkpointed --
++        # a bug here can't cost a training run, only this one test pass.
++        if split == "test":
++            ego_mode_labels = batch["scene_dict"]["ego_mode_label"]  # (B,) array of strings
++            for t in self.pred_lens:
++                tkey = self.horizon_key(t)
++                mu_t = ego_mu[:, :, self.hist_len : self.hist_len + t]
++                sigma_t = ego_sigma[:, :, self.hist_len : self.hist_len + t]
++                mask_t = mask[:, :, self.hist_len : self.hist_len + t]
++                fut_t = ego_fut[:, :, :t]
++
++                rmse_b = compute_mode_rmse(mu_t, ego_scores, fut_t, mask=mask_t).view(-1)
++                nll_b = compute_nll(mu_t, sigma_t, ego_scores, fut_t, mask=mask_t).view(-1)
++                pade_b = mode_ade(mu_t, ego_scores, fut_t, mask=mask_t).view(-1)
++                pfde_b = mode_fde(mu_t, ego_scores, fut_t, mask=mask_t).view(-1)
++                per_sample = {
++                    "rmse": (self.test_rmse, rmse_b),
++                    "nll": (self.test_nll, nll_b),
++                    "pade": (self.test_pade, pade_b),
++                    "pfde": (self.test_pfde, pfde_b),
++                }
++
++                for mode in OUR_TURN_MODES:
++                    if mode == "All":
++                        sel = slice(None)
++                    else:
++                        sel = [i for i, m in enumerate(ego_mode_labels) if m == mode]
++                        if not sel:
++                            continue
++                    mkey = f"{mode}_{tkey}"
++                    for name, (tracker, values) in per_sample.items():
++                        tracker[mkey](values[sel].mean())
++                        self.log(f"test_{name}/{mkey}", tracker[mkey], on_step=False, on_epoch=True)
++
+     def validation_step(self, batch: Any, batch_idx: int):
+         """Logs validation loss and metrics."""
+         self.evaluation_step(batch, "val")
+diff --git a/descent/utils/our_metrics.py b/descent/utils/our_metrics.py
+new file mode 100644
+index 0000000..4e8ad65
+--- /dev/null
++++ b/descent/utils/our_metrics.py
+@@ -0,0 +1,153 @@
++"""Max-probability-selection metrics (RMSE, NLL, PADE, PFDE), ported verbatim from our own
++Amelia-TF-derived evaluation code (AmeliaTF_main/amelia_tf/utils/metrics.py) so DESCENT's results
++use the exact same formulas/conventions as our other baselines (STGCNN, Amelia-TF, TP).
++
++DESCENT's own minADE/minFDE (oracle, best-of-H) are already computed and logged by
++descent.models.trajpred.TrajPred; this file only adds the metrics that are missing: everything
++that depends on *which* candidate the predicted mode scores actually pick, rather than the best
++one in hindsight.
++
++Shapes follow descent.models.trajpred.TrajPred.model_step's outputs after separate_ego_agent and
++horizon-slicing: Y_hat/sigma (B, 1, T, H, D), pred_scores (B, 1, H) *already softmaxed*, Y (B, 1, T,
++D), mask (B, 1, T). The leading "agent" dim (A=1, the ego agent only) is carried through unchanged;
++these functions are agent-count-agnostic.
++"""
++
++import torch
++
++
++def compute_nll(
++    Y_hat: torch.Tensor, sigma: torch.Tensor, pred_scores: torch.Tensor,
++    Y: torch.Tensor, mask: torch.Tensor = None,
++) -> torch.Tensor:
++    """Multi-modal Gaussian-mixture negative log-likelihood.
++
++    Args:
++        Y_hat: [B, A, T_total, H, D] predicted trajectory means (only last T used).
++        sigma: [B, A, T_total, H, D] predicted per-coordinate VARIANCE (only last T used).
++            DESCENT's own decoder names this "sigma" but feeds it unmodified as the `var`
++            argument of torch.nn.functional.gaussian_nll_loss, whose docs specify that
++            argument must already be a variance -- so despite the name, this is not a std
++            dev, and must not be squared again here.
++        pred_scores: [B, A, H] mixture weights (already softmax-normalised probabilities).
++        Y: [B, A, T, D] ground-truth future trajectories.
++        mask: [B, A, T_total] agent validity mask (only last T steps used).
++
++    Returns:
++        nll: [B, A] negative log-likelihood for each agent.
++    """
++    B, A, T, D = Y.size()
++
++    diff = Y[..., None, :] - Y_hat[..., -T:, :, :]  # [B, A, T, H, D]
++    var = sigma[..., -T:, :, :].clamp_min(1e-6)
++    logp_mode = -0.5 * (torch.log(2 * torch.pi * var) + diff.pow(2) / var)
++    logp_mode = logp_mode.sum(dim=-1)  # [B, A, T, H]
++
++    log_pi = torch.log(pred_scores.clamp_min(1e-8))  # [B, A, H]
++    logp_mix = logp_mode + log_pi[:, :, None, :]  # [B, A, T, H]
++
++    logp_t = torch.logsumexp(logp_mix, dim=-1)  # [B, A, T]
++    nll_t = -logp_t
++
++    if mask is None:
++        nll = nll_t.mean(dim=-1)
++    else:
++        mask_pred = mask[:, :, -T:]
++        nll = (nll_t * mask_pred).sum(dim=-1) / mask_pred.sum(dim=-1).clamp_min(1)
++    return nll
++
++
++def compute_mode_rmse(
++    Y_hat: torch.Tensor, pred_scores: torch.Tensor, Y: torch.Tensor,
++    mask: torch.Tensor = None, scale: float = 1000.0,
++) -> torch.Tensor:
++    """RMSE of the highest-probability trajectory.
++
++    Args:
++        Y_hat: [B, A, T_total, H, D] predicted trajectories (only last T steps used).
++        pred_scores: [B, A, H] mode probabilities.
++        Y: [B, A, T, D] ground-truth future trajectories.
++        mask: [B, A, T_total] agent validity mask (only last T steps used).
++        scale: unit conversion (km to m).
++
++    Returns:
++        rmse: [B, A] RMSE for each agent using its highest-probability trajectory.
++    """
++    B, A, T, D = Y.size()
++
++    prob_max_idx = pred_scores.argmax(dim=-1, keepdim=True)  # [B, A, 1]
++    best_traj = torch.gather(
++        Y_hat[..., -T:, :, :], 3,
++        prob_max_idx.unsqueeze(2).unsqueeze(-1).expand(-1, -1, T, 1, D),
++    )[..., 0, :]  # [B, A, T, D]
++
++    error_sq = ((best_traj - Y).norm(dim=-1)).pow(2)
++    if mask is None:
++        error_sq = error_sq.mean(dim=2)
++    else:
++        mask = mask[:, :, -T:]
++        error_sq = error_sq.view(B * A, T)
++        BA, T_ = error_sq.shape
++        mask = mask.view(BA, T_)
++        error_masked = torch.zeros(BA, device=error_sq.device)
++        for ba in range(BA):
++            amask = mask[ba]
++            error_masked[ba] = error_sq[ba, amask].mean(dim=0)
++        error_sq = error_masked.view(B, A)
++
++    rmse = torch.sqrt(error_sq)
++    return scale * rmse
++
++
++def mode_ade(
++    Y_hat: torch.Tensor, pred_scores: torch.Tensor, Y: torch.Tensor,
++    mask: torch.Tensor = None, scale: float = 1000.0,
++) -> torch.Tensor:
++    """Average displacement error of the highest-probability trajectory (our "PADE")."""
++    B, A, T, D = Y.size()
++
++    prob_max_idx = pred_scores.argmax(dim=-1, keepdim=True)  # [B, A, 1]
++    best_traj = torch.gather(
++        Y_hat[..., -T:, :, :], 3,
++        prob_max_idx.unsqueeze(2).unsqueeze(-1).expand(-1, -1, T, 1, D),
++    )[..., 0, :]  # [B, A, T, D]
++
++    error = (best_traj - Y).norm(dim=-1)  # [B, A, T]
++    if mask is None:
++        ade = error.mean(dim=-1)
++    else:
++        mask_pred = mask[:, :, -T:]
++        ade = (error * mask_pred).sum(dim=-1) / mask_pred.sum(dim=-1).clamp_min(1)
++    return scale * ade
++
++
++def mode_fde(
++    Y_hat: torch.Tensor, pred_scores: torch.Tensor, Y: torch.Tensor,
++    mask: torch.Tensor = None, scale: float = 1000.0,
++) -> torch.Tensor:
++    """Final displacement error of the highest-probability trajectory (our "PFDE")."""
++    B, A, T, D = Y.size()
++
++    prob_max_idx = pred_scores.argmax(dim=-1, keepdim=True)  # [B, A, 1]
++
++    if mask is None:
++        best_traj_final = torch.gather(
++            Y_hat[..., -1:, :, :], 2,
++            prob_max_idx.unsqueeze(2).unsqueeze(-1).expand(-1, -1, 1, 1, D),
++        )[..., 0, :]
++        best_traj_final = best_traj_final.squeeze(2)
++        Y_final = Y[..., -1, :]
++        error = (best_traj_final - Y_final).norm(dim=-1)
++    else:
++        mask_pred = mask[:, :, -T:]
++        last_valid_idx = (mask_pred != 0).cumsum(dim=-1).argmax(dim=-1)  # [B, A]
++        b_idx, a_idx = torch.meshgrid(
++            torch.arange(B, device=Y.device), torch.arange(A, device=Y.device), indexing="ij"
++        )
++        Y_final = Y[b_idx, a_idx, last_valid_idx]  # [B, A, D]
++        Y_hat_final_all_modes = Y_hat[..., -T:, :, :][b_idx, a_idx, last_valid_idx, :, :]  # [B,A,H,D]
++        best_traj_final = torch.gather(
++            Y_hat_final_all_modes, 2, prob_max_idx.unsqueeze(-1).expand(-1, -1, 1, D),
++        )[..., 0, :]
++        error = (best_traj_final - Y_final).norm(dim=-1)
++    return scale * error

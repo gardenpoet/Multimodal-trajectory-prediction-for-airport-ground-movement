@@ -33,7 +33,35 @@ pip install -e .
 # 3. Sanity check: confirm our 3 target airports' maps/splits are present
 ls maps/ | grep -E "kmsy|kbos|klax"
 ls splits/ | grep -E "kmsy|kbos|klax"
+
+# 4. Apply our metrics patch BEFORE submitting any training job (see below for why)
+git apply ../descent_baseline/our_metrics.patch
+git status   # should show dataset.py and trajpred.py modified, utils/our_metrics.py added
 ```
+
+### Why the patch, and why apply it now
+
+DESCENT's own `test_step` only computes minADE/minFDE (oracle, best-of-H), aggregated per
+airport -- it never uses the predicted mode *scores* to pick a candidate, never computes a
+mixture NLL, and never saves per-scene predictions to disk for us to post-process later. To
+get the rest of our table (RMSE/NLL/PADE/PFDE, max-probability-selection, broken down by
+Straight/Hold/TurnLeft/TurnRight the way our STGCNN/Amelia-TF rows already are) in the same
+run, `our_metrics.patch`:
+
+- Adds `descent/utils/our_metrics.py`: `compute_nll`/`compute_mode_rmse`/`mode_ade`/`mode_fde`,
+  ported verbatim from `AmeliaTF_main/amelia_tf/utils/metrics.py` so the formulas match exactly.
+- Patches `descent/data/dataset.py` to carry the ego agent's `mode_labels` entry (already
+  written into our scene pkls by `scene_processor.py`, just previously dropped by DESCENT's own
+  loader) through to the batch, normalised to our four turn categories.
+- Patches `descent/models/trajpred.py`'s `evaluation_step` to compute the four metrics above,
+  per turn category, **guarded to the test split only** -- training's own loss/early-stopping
+  (`val_ade/t=max`) is untouched, so even if this patch has a bug, it can only break the one
+  auto-test pass *after* training already finished and checkpointed, never the training run
+  itself.
+
+Must be applied before `sbatch`-ing the jobs below: once a job starts, it has already loaded
+these Python files into memory, and editing them on disk afterwards has no effect on that
+running job (would need killing and resubmitting instead).
 
 No dataset download/symlink step is needed: the training jobs below override
 `paths.base_dir` directly to point at our own already-generated, runway-filtered
