@@ -133,17 +133,36 @@ def main(cfg: DictConfig) -> None:
     # paths (set at dataset-construction time, before ego_agent_id is ever
     # consumed) let us find the target's dataset index directly, with no
     # pickle loading or __getitem__ calls on any other scene.
-    dataset = dataloader.dataset
-    dataset_idx = None
-    for i, item in enumerate(dataset.scenario_list):
-        if os.path.relpath(str(item), dataset.in_data_dir) == target_scene_file:
-            dataset_idx = i
+    #
+    # STGCNN's own test_dataloader() wraps the base dataset in one or more
+    # torch.utils.data.Subset layers (unlike the TP/Amelia-baseline repos),
+    # so scenario_list/in_data_dir live on some inner `.dataset`, not on
+    # dataloader.dataset directly -- unwrap down to find them, then map the
+    # match back up through each Subset layer's own `.indices`.
+    outer_dataset = dataloader.dataset
+    chain = []
+    base = outer_dataset
+    while not hasattr(base, "scenario_list"):
+        if not hasattr(base, "dataset"):
+            raise RuntimeError(
+                "Could not find a base dataset with scenario_list under dataloader.dataset")
+        chain.append(base)
+        base = base.dataset
+
+    raw_idx = None
+    for i, item in enumerate(base.scenario_list):
+        if os.path.relpath(str(item), base.in_data_dir) == target_scene_file:
+            raw_idx = i
             break
-    if dataset_idx is None:
+    if raw_idx is None:
         raise RuntimeError(f"scene_file={target_scene_file} not found in this repo's scenario_list")
-    print(f"[case_trajectories_stgcnn] found at dataset_idx={dataset_idx}")
+
+    dataset_idx = raw_idx
+    for layer in reversed(chain):
+        dataset_idx = layer.indices.index(dataset_idx)
+    print(f"[case_trajectories_stgcnn] found at dataset_idx={dataset_idx} (raw scenario_list idx={raw_idx})")
     single_loader = torch.utils.data.DataLoader(
-        torch.utils.data.Subset(dataset, [dataset_idx]),
+        torch.utils.data.Subset(outer_dataset, [dataset_idx]),
         batch_size=1, shuffle=False, num_workers=0,
         collate_fn=dataloader.collate_fn,
     )
