@@ -46,3 +46,8 @@ plots/
 ~*
 AmeliaTF_main/datasets/
 **/out/
+
+# External DESCENT baseline repo (cloned per descent_baseline/SETUP.md,
+# own git history + LFS checkpoints/maps -- not ours to track, reproducible
+# from https://github.com/a-pru/descent)
+/descent/
