@@ -166,185 +166,196 @@ def main(cfg: DictConfig) -> None:
     datamodule.setup(stage="test")
     dataloader = datamodule.test_dataloader()
 
+    # Materialising every batch up to target_batch via enumerate(dataloader)
+    # forces __getitem__ on every OTHER scene along the way too. Since
+    # +data.dataset.config.ego_agent_id is a dataset-wide override (applied
+    # in __getitem__ to every scene, not just the one we actually want), any
+    # other scene with fewer real agents than that pinned index crashes the
+    # whole run before ever reaching the target batch -- even though the
+    # target scene itself may be perfectly fine. Restricting to a
+    # single-item Subset containing only the target scene's own dataset
+    # index sidesteps every other scene entirely, so a global
+    # ego_agent_id override is safe regardless of what the rest of the test
+    # split looks like.
+    batch_size = dataloader.batch_size or 1
+    dataset_idx = target_batch * batch_size + target_sample
+    single_loader = torch.utils.data.DataLoader(
+        torch.utils.data.Subset(dataloader.dataset, [dataset_idx]),
+        batch_size=1, shuffle=False, num_workers=0,
+        collate_fn=dataloader.collate_fn,
+    )
+    batch = next(iter(single_loader))
+    batch = to_device(batch, device)
+    scene = batch['scene_dict']
+
     with torch.no_grad():
-        for batch_idx, batch in enumerate(dataloader):
-            if batch_idx > target_batch:
-                raise RuntimeError(f"Never reached batch {target_batch} (stopped at {batch_idx})")
-            if batch_idx != target_batch:
-                continue
-            batch = to_device(batch, device)
-            scene = batch['scene_dict']
+        mode_probs, traj_mu, traj_sigma, traj_score = model.forward(batch)
 
-            mode_probs, traj_mu, traj_sigma, traj_score = model.forward(batch)
+        ego_agent = scene['ego_agent_id']
+        ego_ids = [
+            ego_agent[b].item() if torch.is_tensor(ego_agent) else int(ego_agent[b])
+            for b in range(mode_probs.shape[0])
+        ]
+        airport_ids = scene.get('airport_id')
 
-            ego_agent = scene['ego_agent_id']
-            ego_ids = [
-                ego_agent[b].item() if torch.is_tensor(ego_agent) else int(ego_agent[b])
-                for b in range(mode_probs.shape[0])
-            ]
-            airport_ids = scene.get('airport_id')
+        rule_based = scene.get('rule_based_encoding')
+        true_mode_idx = rule_based[..., :4].float().argmax(dim=-1).long()
+        ego_true_mode = separate_ego_agent(true_mode_idx, ego_ids).squeeze(1)
 
-            rule_based = scene.get('rule_based_encoding')
-            true_mode_idx = rule_based[..., :4].float().argmax(dim=-1).long()
-            ego_true_mode = separate_ego_agent(true_mode_idx, ego_ids).squeeze(1)
+        ego_probs = separate_ego_agent(mode_probs, ego_ids).squeeze(1)      # (B, M)
+        ego_mu = separate_ego_agent(traj_mu, ego_ids).squeeze(1)            # (B, T_total, M, K, D)
+        ego_sigma = separate_ego_agent(traj_sigma, ego_ids).squeeze(1)      # (B, T_total, M, K, D)
 
-            ego_probs = separate_ego_agent(mode_probs, ego_ids).squeeze(1)      # (B, M)
-            ego_mu = separate_ego_agent(traj_mu, ego_ids).squeeze(1)            # (B, T_total, M, K, D)
-            ego_sigma = separate_ego_agent(traj_sigma, ego_ids).squeeze(1)      # (B, T_total, M, K, D)
+        # Which modes are geometrically feasible for this scene (same
+        # mask risk_gated restricts its max to in find_cases_two_stage.py)
+        # -- an infeasible mode's "prediction" is a candidate with no
+        # physical meaning and shouldn't be shown alongside real ones.
+        feasibility = scene.get('turn_feasibility', None)
+        if feasibility is not None:
+            ego_feas = separate_ego_agent(feasibility, ego_ids).squeeze(1)  # (B, M)
+            ego_feas = ego_feas.bool().cpu().numpy()
+        else:
+            ego_feas = np.ones(ego_probs.shape, dtype=bool)
 
-            # Which modes are geometrically feasible for this scene (same
-            # mask risk_gated restricts its max to in find_cases_two_stage.py)
-            # -- an infeasible mode's "prediction" is a candidate with no
-            # physical meaning and shouldn't be shown alongside real ones.
-            feasibility = scene.get('turn_feasibility', None)
-            if feasibility is not None:
-                ego_feas = separate_ego_agent(feasibility, ego_ids).squeeze(1)  # (B, M)
-                ego_feas = ego_feas.bool().cpu().numpy()
-            else:
-                ego_feas = np.ones(ego_probs.shape, dtype=bool)
+        sequences = scene['sequences']
+        agent_masks = scene['agent_masks']
+        agent_types_flat = scene['agent_types'].reshape(sequences.shape[0], -1)
+        scene_files = scene.get('scene_file')
 
-            sequences = scene['sequences']
-            agent_masks = scene['agent_masks']
-            agent_types_flat = scene['agent_types'].reshape(sequences.shape[0], -1)
-            scene_files = scene.get('scene_file')
+        if traj_score is not None:
+            ego_score = separate_ego_agent(traj_score, ego_ids).squeeze(1)
+            ego_mask = separate_ego_agent(agent_masks, ego_ids).squeeze(1)
+            fut_mask = ego_mask[:, hist_len:].float()
+            m_exp = fut_mask[:, :, None, None]
+            denom = m_exp.sum(dim=1).clamp_min(1)
+            s_pt = ego_score[:, hist_len:]
+            score_fut = (s_pt * m_exp).sum(dim=1) / denom
+            cand_probs = torch.softmax(score_fut, dim=-1).detach().cpu().numpy()  # (B, M, K)
+        else:
+            B_, M_, K_ = ego_probs.shape[0], ego_probs.shape[1], ego_mu.shape[3]
+            cand_probs = np.ones((B_, M_, K_), dtype=np.float64) / K_
 
-            if traj_score is not None:
-                ego_score = separate_ego_agent(traj_score, ego_ids).squeeze(1)
-                ego_mask = separate_ego_agent(agent_masks, ego_ids).squeeze(1)
-                fut_mask = ego_mask[:, hist_len:].float()
-                m_exp = fut_mask[:, :, None, None]
-                denom = m_exp.sum(dim=1).clamp_min(1)
-                s_pt = ego_score[:, hist_len:]
-                score_fut = (s_pt * m_exp).sum(dim=1) / denom
-                cand_probs = torch.softmax(score_fut, dim=-1).detach().cpu().numpy()  # (B, M, K)
-            else:
-                B_, M_, K_ = ego_probs.shape[0], ego_probs.shape[1], ego_mu.shape[3]
-                cand_probs = np.ones((B_, M_, K_), dtype=np.float64) / K_
+        traj_abs = _mode_candidate_trajectories_abs(
+            ego_mu, sequences, ego_ids, hist_len)  # (M,K,B,T_pred,2)
 
-            traj_abs = _mode_candidate_trajectories_abs(
-                ego_mu, sequences, ego_ids, hist_len)  # (M,K,B,T_pred,2)
+        b = 0  # single-item batch now; was `target_sample` into the full batch
+        ego_id = ego_ids[b]
+        gt_mode = int(ego_true_mode[b].item())
+        argmax_mode = int(ego_probs[b].argmax().item())
 
-            b = target_sample
-            ego_id = ego_ids[b]
-            gt_mode = int(ego_true_mode[b].item())
-            argmax_mode = int(ego_probs[b].argmax().item())
+        # Same heading _mode_candidate_trajectories_abs uses to rotate mu
+        # into the absolute frame -- recorded so sigma_xy (left in the
+        # RAW, un-rotated frame below) can be correctly rotated later.
+        start_heading_deg = float(
+            sequences[b, ego_id, hist_len - 1, G.HD].detach().cpu().item())
 
-            # Same heading _mode_candidate_trajectories_abs uses to rotate mu
-            # into the absolute frame -- recorded so sigma_xy (left in the
-            # RAW, un-rotated frame below) can be correctly rotated later.
-            start_heading_deg = float(
-                sequences[b, ego_id, hist_len - 1, G.HD].detach().cpu().item())
+        real_ego_xy = sequences[b, ego_id, hist_len:, G.XY].detach().cpu().numpy()  # (T_pred, 2)
 
-            real_ego_xy = sequences[b, ego_id, hist_len:, G.XY].detach().cpu().numpy()  # (T_pred, 2)
+        if ref_agent_idx_override is not None:
+            ref_agent_idx = ref_agent_idx_override
+        else:
+            # Auto-detect: whichever agent achieved the closest approach
+            # in the REALIZED trajectory (same quantity
+            # find_cases_two_stage.py's true_min_sep_gt_agent_type
+            # identifies the type of, resolved here to its raw index).
+            A_total = sequences.shape[1]
+            other_idx, other_xy, other_valid = [], [], []
+            for a in range(A_total):
+                if a == ego_id:
+                    continue
+                valid_a = agent_masks[b, a, hist_len:].bool().detach().cpu().numpy()
+                if not valid_a.any():
+                    continue
+                other_idx.append(a)
+                other_xy.append(sequences[b, a, hist_len:, G.XY].detach().cpu().numpy())
+                other_valid.append(valid_a)
+            if not other_idx:
+                raise RuntimeError(
+                    f"No valid other agent in batch={target_batch} sample={target_sample} "
+                    "to auto-detect a reference agent from.")
+            other_xy_arr = np.stack(other_xy, axis=0)
+            other_valid_arr = np.stack(other_valid, axis=0)
+            dist = np.linalg.norm(other_xy_arr - real_ego_xy[None, :, :], axis=-1)
+            dist = np.where(other_valid_arr, dist, np.inf)
+            agent_i, _t_i = np.unravel_index(np.argmin(dist), dist.shape)
+            ref_agent_idx = other_idx[agent_i]
 
-            if ref_agent_idx_override is not None:
-                ref_agent_idx = ref_agent_idx_override
-            else:
-                # Auto-detect: whichever agent achieved the closest approach
-                # in the REALIZED trajectory (same quantity
-                # find_cases_two_stage.py's true_min_sep_gt_agent_type
-                # identifies the type of, resolved here to its raw index).
-                A_total = sequences.shape[1]
-                other_idx, other_xy, other_valid = [], [], []
-                for a in range(A_total):
-                    if a == ego_id:
-                        continue
-                    valid_a = agent_masks[b, a, hist_len:].bool().detach().cpu().numpy()
-                    if not valid_a.any():
-                        continue
-                    other_idx.append(a)
-                    other_xy.append(sequences[b, a, hist_len:, G.XY].detach().cpu().numpy())
-                    other_valid.append(valid_a)
-                if not other_idx:
-                    raise RuntimeError(
-                        f"No valid other agent in batch={target_batch} sample={target_sample} "
-                        "to auto-detect a reference agent from.")
-                other_xy_arr = np.stack(other_xy, axis=0)
-                other_valid_arr = np.stack(other_valid, axis=0)
-                dist = np.linalg.norm(other_xy_arr - real_ego_xy[None, :, :], axis=-1)
-                dist = np.where(other_valid_arr, dist, np.inf)
-                agent_i, _t_i = np.unravel_index(np.argmin(dist), dist.shape)
-                ref_agent_idx = other_idx[agent_i]
+        ref_xy = sequences[b, ref_agent_idx, hist_len:, G.XY].detach().cpu().numpy()  # (T_pred, 2)
+        ref_valid = agent_masks[b, ref_agent_idx, hist_len:].bool().detach().cpu().numpy()
+        ref_type = int(agent_types_flat[b, ref_agent_idx].item())
 
-            ref_xy = sequences[b, ref_agent_idx, hist_len:, G.XY].detach().cpu().numpy()  # (T_pred, 2)
-            ref_valid = agent_masks[b, ref_agent_idx, hist_len:].bool().detach().cpu().numpy()
-            ref_type = int(agent_types_flat[b, ref_agent_idx].item())
+        real_dist = np.linalg.norm(real_ego_xy - ref_xy, axis=-1)
+        real_dist = np.where(ref_valid, real_dist, np.nan) * 1000  # km -> m
 
-            real_dist = np.linalg.norm(real_ego_xy - ref_xy, axis=-1)
-            real_dist = np.where(ref_valid, real_dist, np.nan) * 1000  # km -> m
+        airport = airport_ids[b] if airport_ids is not None else None
+        ref = load_airport_ref(cfg.paths.assets_dir, airport)
 
-            airport = airport_ids[b] if airport_ids is not None else None
-            ref = load_airport_ref(cfg.paths.assets_dir, airport)
-
-            def _agent_latlon(a_idx):
-                xy = sequences[b, a_idx, :, G.XY].detach().cpu().numpy()          # (T_total, 2)
-                valid = agent_masks[b, a_idx, :].bool().detach().cpu().numpy()    # (T_total,)
-                xy_masked = np.where(valid[:, None], xy, np.nan)
-                return {
-                    "agent_idx": a_idx,
-                    "agent_type": AGENT_TYPE_NAMES.get(int(agent_types_flat[b, a_idx].item())),
-                    "latlon_hist": xy_array_to_latlon(xy_masked[:hist_len], ref),
-                    "latlon_fut": xy_array_to_latlon(xy_masked[hist_len:], ref),
-                }
-
-            A = sequences.shape[1]
-            gt_out = {
-                "ego": _agent_latlon(ego_id),
-                "ref_agent": _agent_latlon(ref_agent_idx),
-                "other_agents": [
-                    _agent_latlon(a) for a in range(A)
-                    if a not in (ego_id, ref_agent_idx)
-                    and agent_masks[b, a, :].bool().any().item()
-                ],
+        def _agent_latlon(a_idx):
+            xy = sequences[b, a_idx, :, G.XY].detach().cpu().numpy()          # (T_total, 2)
+            valid = agent_masks[b, a_idx, :].bool().detach().cpu().numpy()    # (T_total,)
+            xy_masked = np.where(valid[:, None], xy, np.nan)
+            return {
+                "agent_idx": a_idx,
+                "agent_type": AGENT_TYPE_NAMES.get(int(agent_types_flat[b, a_idx].item())),
+                "latlon_hist": xy_array_to_latlon(xy_masked[:hist_len], ref),
+                "latlon_fut": xy_array_to_latlon(xy_masked[hist_len:], ref),
             }
 
-            M, K = traj_abs.shape[0], traj_abs.shape[1]
-            modes_out = {}
-            for m in range(M):
-                cands = []
-                for k in range(K):
-                    cand_xy = traj_abs[m, k, b]  # (T_pred, 2)
-                    dist = np.linalg.norm(cand_xy - ref_xy, axis=-1)
-                    dist = np.where(ref_valid, dist, np.nan) * 1000  # km -> m
-                    cand_xy_masked = np.where(ref_valid[:, None], cand_xy, np.nan)
-                    cand_sigma = ego_sigma[b, hist_len:, m, k, :2].detach().cpu().numpy()  # (T_pred, 2)
-                    cands.append({
-                        "prob": float(cand_probs[b, m, k]),
-                        "dist_m": [None if np.isnan(v) else float(v) for v in dist],
-                        "latlon": xy_array_to_latlon(cand_xy_masked, ref),
-                        "sigma_xy": [[float(sx), float(sy)] for sx, sy in cand_sigma],
-                    })
-                modes_out[MODE_NAMES[m]] = {
-                    "mode_prob": float(ego_probs[b, m].item()),
-                    "feasible": bool(ego_feas[b, m]),
-                    "candidates": cands,
-                }
+        A = sequences.shape[1]
+        gt_out = {
+            "ego": _agent_latlon(ego_id),
+            "ref_agent": _agent_latlon(ref_agent_idx),
+            "other_agents": [
+                _agent_latlon(a) for a in range(A)
+                if a not in (ego_id, ref_agent_idx)
+                and agent_masks[b, a, :].bool().any().item()
+            ],
+        }
 
-            out = {
-                "meta": {
-                    "airport": airport,
-                    "batch_idx": batch_idx,
-                    "sample_idx": b,
-                    "scene_file": scene_files[b] if scene_files is not None else None,
-                    "ego_id": ego_id,
-                    "ref_agent_idx": ref_agent_idx,
-                    "ref_agent_type": AGENT_TYPE_NAMES.get(ref_type, str(ref_type)),
-                    "mode_names": MODE_NAMES,
-                    "gt_mode": MODE_NAMES[gt_mode] if 0 <= gt_mode < len(MODE_NAMES) else gt_mode,
-                    "argmax_mode": MODE_NAMES[argmax_mode],
-                    "hist_len": hist_len,
-                    "start_heading_deg": start_heading_deg,
-                },
-                "gt": gt_out,
-                "modes": modes_out,
-                "real": {"dist_m": [None if np.isnan(v) else float(v) for v in real_dist]},
+        M, K = traj_abs.shape[0], traj_abs.shape[1]
+        modes_out = {}
+        for m in range(M):
+            cands = []
+            for k in range(K):
+                cand_xy = traj_abs[m, k, b]  # (T_pred, 2)
+                dist = np.linalg.norm(cand_xy - ref_xy, axis=-1)
+                dist = np.where(ref_valid, dist, np.nan) * 1000  # km -> m
+                cand_xy_masked = np.where(ref_valid[:, None], cand_xy, np.nan)
+                cand_sigma = ego_sigma[b, hist_len:, m, k, :2].detach().cpu().numpy()  # (T_pred, 2)
+                cands.append({
+                    "prob": float(cand_probs[b, m, k]),
+                    "dist_m": [None if np.isnan(v) else float(v) for v in dist],
+                    "latlon": xy_array_to_latlon(cand_xy_masked, ref),
+                    "sigma_xy": [[float(sx), float(sy)] for sx, sy in cand_sigma],
+                })
+            modes_out[MODE_NAMES[m]] = {
+                "mode_prob": float(ego_probs[b, m].item()),
+                "feasible": bool(ego_feas[b, m]),
+                "candidates": cands,
             }
-            with open(output_json, "w") as f:
-                json.dump(out, f, indent=2)
-            print(f"[case_risk_dynamics] wrote {output_json}")
-            return
 
-    raise RuntimeError(f"Batch {target_batch} not found in dataloader")
+        out = {
+            "meta": {
+                "airport": airport,
+                "batch_idx": target_batch,
+                "sample_idx": target_sample,
+                "scene_file": scene_files[b] if scene_files is not None else None,
+                "ego_id": ego_id,
+                "ref_agent_idx": ref_agent_idx,
+                "ref_agent_type": AGENT_TYPE_NAMES.get(ref_type, str(ref_type)),
+                "mode_names": MODE_NAMES,
+                "gt_mode": MODE_NAMES[gt_mode] if 0 <= gt_mode < len(MODE_NAMES) else gt_mode,
+                "argmax_mode": MODE_NAMES[argmax_mode],
+                "hist_len": hist_len,
+                "start_heading_deg": start_heading_deg,
+            },
+            "gt": gt_out,
+            "modes": modes_out,
+            "real": {"dist_m": [None if np.isnan(v) else float(v) for v in real_dist]},
+        }
+        with open(output_json, "w") as f:
+            json.dump(out, f, indent=2)
+        print(f"[case_risk_dynamics] wrote {output_json}")
 
 
 if __name__ == "__main__":

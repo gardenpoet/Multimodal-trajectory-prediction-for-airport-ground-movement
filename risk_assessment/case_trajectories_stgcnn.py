@@ -123,140 +123,155 @@ def main(cfg: DictConfig) -> None:
     if isinstance(dataloader, (list, tuple)):
         dataloader = dataloader[0]
 
+    # Scanning batch-by-batch via enumerate(dataloader) to find scene_file
+    # forces __getitem__ on every OTHER scene along the way too. Since
+    # +data.dataset.config.ego_agent_id is a dataset-wide override (applied
+    # in __getitem__ to every scene, not just the target one), any other
+    # scene with fewer real agents than that pinned index crashes the whole
+    # scan before ever reaching the target scene -- even though the target
+    # scene itself may be perfectly fine. The scenario_list's own relative
+    # paths (set at dataset-construction time, before ego_agent_id is ever
+    # consumed) let us find the target's dataset index directly, with no
+    # pickle loading or __getitem__ calls on any other scene.
+    dataset = dataloader.dataset
+    dataset_idx = None
+    for i, item in enumerate(dataset.scenario_list):
+        if os.path.relpath(str(item), dataset.in_data_dir) == target_scene_file:
+            dataset_idx = i
+            break
+    if dataset_idx is None:
+        raise RuntimeError(f"scene_file={target_scene_file} not found in this repo's scenario_list")
+    print(f"[case_trajectories_stgcnn] found at dataset_idx={dataset_idx}")
+    single_loader = torch.utils.data.DataLoader(
+        torch.utils.data.Subset(dataset, [dataset_idx]),
+        batch_size=1, shuffle=False, num_workers=0,
+        collate_fn=dataloader.collate_fn,
+    )
+    batch = next(iter(single_loader))
+    scene = batch['scene_dict']
+    scene_files = scene.get('scene_file')
+    if scene_files is None:
+        raise RuntimeError("scene_file not in scene_dict -- rerun with the scene_file fix.")
+    b = list(scene_files).index(target_scene_file)
+
+    batch = to_device(batch, device)
+    scene = batch['scene_dict']
+
     with torch.no_grad():
-        for batch_idx, batch in enumerate(dataloader):
-            scene = batch['scene_dict']
-            scene_files = scene.get('scene_file')
-            if scene_files is None:
-                raise RuntimeError("scene_file not in scene_dict -- rerun with the scene_file fix.")
-            if target_scene_file not in list(scene_files):
-                if batch_idx % 200 == 0:
-                    print(f"[case_trajectories_stgcnn] scanned batch {batch_idx}, not found yet")
-                continue
+        seq = scene['rel_sequences']
+        masks = scene['agent_masks'].bool()
+        X = seq[:, :, :hist_len].float()
+        mask_h = masks[:, :, :hist_len]
+        mu, sigma = model.net(X, mask_h)  # (B, A, Tp, 2) each
 
-            b = list(scene_files).index(target_scene_file)
-            print(f"[case_trajectories_stgcnn] found at batch={batch_idx} sample={b}")
+        ego_agent = scene['ego_agent_id_test']
+        ego_ids = [
+            ego_agent[i].item() if torch.is_tensor(ego_agent) else int(ego_agent[i])
+            for i in range(mu.shape[0])
+        ]
+        airport_ids = scene.get('airport_id')
+        ego_id = ego_ids[b]
 
-            batch = to_device(batch, device)
-            scene = batch['scene_dict']
+        ego_mu = separate_ego_agent(mu, ego_ids).squeeze(1)  # (B, Tp, 2)
+        ego_sigma = separate_ego_agent(sigma, ego_ids).squeeze(1)  # (B, Tp, 2)
 
-            seq = scene['rel_sequences']
-            masks = scene['agent_masks'].bool()
-            X = seq[:, :, :hist_len].float()
-            mask_h = masks[:, :, :hist_len]
-            mu, sigma = model.net(X, mask_h)  # (B, A, Tp, 2) each
+        sequences = scene['sequences']
+        agent_masks = scene['agent_masks']
+        agent_types_flat = scene['agent_types'].reshape(sequences.shape[0], -1)
 
-            ego_agent = scene['ego_agent_id_test']
-            ego_ids = [
-                ego_agent[i].item() if torch.is_tensor(ego_agent) else int(ego_agent[i])
-                for i in range(mu.shape[0])
-            ]
-            airport_ids = scene.get('airport_id')
-            ego_id = ego_ids[b]
+        traj_abs = _ego_trajectory_abs(ego_mu, sequences, ego_ids, hist_len)  # (B, Tp, 2)
+        fut_end = hist_len + max_pred_len
+        pred_xy = traj_abs[b]  # (Tp, 2)
+        # RAW (un-rotated) sigma -- see case_risk_dynamics.py's sigma_xy
+        # docstring note for why this isn't in the same frame as pred_xy.
+        pred_sigma = ego_sigma[b].detach().cpu().numpy()  # (Tp, 2)
+        start_heading_deg = float(
+            sequences[b, ego_id, hist_len - 1, G.HD].detach().cpu().item())
+        real_ego_xy = sequences[b, ego_id, hist_len:fut_end, G.XY].detach().cpu().numpy()
 
-            ego_mu = separate_ego_agent(mu, ego_ids).squeeze(1)  # (B, Tp, 2)
-            ego_sigma = separate_ego_agent(sigma, ego_ids).squeeze(1)  # (B, Tp, 2)
+        if ref_agent_idx_override is not None:
+            ref_agent_idx = ref_agent_idx_override
+        else:
+            # Auto-detect reference agent from the REALIZED trajectory --
+            # same logic as case_risk_dynamics.py, computed independently.
+            A_total = sequences.shape[1]
+            other_idx, other_xy, other_valid = [], [], []
+            for a in range(A_total):
+                if a == ego_id:
+                    continue
+                valid_a = agent_masks[b, a, hist_len:fut_end].bool().detach().cpu().numpy()
+                if not valid_a.any():
+                    continue
+                other_idx.append(a)
+                other_xy.append(sequences[b, a, hist_len:fut_end, G.XY].detach().cpu().numpy())
+                other_valid.append(valid_a)
+            if not other_idx:
+                raise RuntimeError(f"No valid other agent for scene_file={target_scene_file}")
+            other_xy_arr = np.stack(other_xy, axis=0)
+            other_valid_arr = np.stack(other_valid, axis=0)
+            dist = np.linalg.norm(other_xy_arr - real_ego_xy[None, :, :], axis=-1)
+            dist = np.where(other_valid_arr, dist, np.inf)
+            agent_i, _t_i = np.unravel_index(np.argmin(dist), dist.shape)
+            ref_agent_idx = other_idx[agent_i]
 
-            sequences = scene['sequences']
-            agent_masks = scene['agent_masks']
-            agent_types_flat = scene['agent_types'].reshape(sequences.shape[0], -1)
+        ref_xy = sequences[b, ref_agent_idx, hist_len:fut_end, G.XY].detach().cpu().numpy()
+        ref_valid = agent_masks[b, ref_agent_idx, hist_len:fut_end].bool().detach().cpu().numpy()
+        ref_type = int(agent_types_flat[b, ref_agent_idx].item())
 
-            traj_abs = _ego_trajectory_abs(ego_mu, sequences, ego_ids, hist_len)  # (B, Tp, 2)
-            fut_end = hist_len + max_pred_len
-            pred_xy = traj_abs[b]  # (Tp, 2)
-            # RAW (un-rotated) sigma -- see case_risk_dynamics.py's sigma_xy
-            # docstring note for why this isn't in the same frame as pred_xy.
-            pred_sigma = ego_sigma[b].detach().cpu().numpy()  # (Tp, 2)
-            start_heading_deg = float(
-                sequences[b, ego_id, hist_len - 1, G.HD].detach().cpu().item())
-            real_ego_xy = sequences[b, ego_id, hist_len:fut_end, G.XY].detach().cpu().numpy()
+        real_dist = np.linalg.norm(real_ego_xy - ref_xy, axis=-1)
+        real_dist = np.where(ref_valid, real_dist, np.nan) * 1000  # km -> m
+        pred_dist = np.linalg.norm(pred_xy - ref_xy, axis=-1)
+        pred_dist = np.where(ref_valid, pred_dist, np.nan) * 1000  # km -> m
 
-            if ref_agent_idx_override is not None:
-                ref_agent_idx = ref_agent_idx_override
-            else:
-                # Auto-detect reference agent from the REALIZED trajectory --
-                # same logic as case_risk_dynamics.py, computed independently.
-                A_total = sequences.shape[1]
-                other_idx, other_xy, other_valid = [], [], []
-                for a in range(A_total):
-                    if a == ego_id:
-                        continue
-                    valid_a = agent_masks[b, a, hist_len:fut_end].bool().detach().cpu().numpy()
-                    if not valid_a.any():
-                        continue
-                    other_idx.append(a)
-                    other_xy.append(sequences[b, a, hist_len:fut_end, G.XY].detach().cpu().numpy())
-                    other_valid.append(valid_a)
-                if not other_idx:
-                    raise RuntimeError(f"No valid other agent for scene_file={target_scene_file}")
-                other_xy_arr = np.stack(other_xy, axis=0)
-                other_valid_arr = np.stack(other_valid, axis=0)
-                dist = np.linalg.norm(other_xy_arr - real_ego_xy[None, :, :], axis=-1)
-                dist = np.where(other_valid_arr, dist, np.inf)
-                agent_i, _t_i = np.unravel_index(np.argmin(dist), dist.shape)
-                ref_agent_idx = other_idx[agent_i]
+        airport = airport_ids[b] if airport_ids is not None else None
+        ref = load_airport_ref(cfg.paths.assets_dir, airport)
 
-            ref_xy = sequences[b, ref_agent_idx, hist_len:fut_end, G.XY].detach().cpu().numpy()
-            ref_valid = agent_masks[b, ref_agent_idx, hist_len:fut_end].bool().detach().cpu().numpy()
-            ref_type = int(agent_types_flat[b, ref_agent_idx].item())
-
-            real_dist = np.linalg.norm(real_ego_xy - ref_xy, axis=-1)
-            real_dist = np.where(ref_valid, real_dist, np.nan) * 1000  # km -> m
-            pred_dist = np.linalg.norm(pred_xy - ref_xy, axis=-1)
-            pred_dist = np.where(ref_valid, pred_dist, np.nan) * 1000  # km -> m
-
-            airport = airport_ids[b] if airport_ids is not None else None
-            ref = load_airport_ref(cfg.paths.assets_dir, airport)
-
-            def _agent_latlon(a_idx):
-                xy = sequences[b, a_idx, :, G.XY].detach().cpu().numpy()
-                valid = agent_masks[b, a_idx, :].bool().detach().cpu().numpy()
-                xy_masked = np.where(valid[:, None], xy, np.nan)
-                return {
-                    "agent_idx": a_idx,
-                    "agent_type": AGENT_TYPE_NAMES.get(int(agent_types_flat[b, a_idx].item())),
-                    "latlon_hist": xy_array_to_latlon(xy_masked[:hist_len], ref),
-                    "latlon_fut": xy_array_to_latlon(xy_masked[hist_len:], ref),
-                }
-
-            A = sequences.shape[1]
-            gt_out = {
-                "ego": _agent_latlon(ego_id),
-                "ref_agent": _agent_latlon(ref_agent_idx),
-                "other_agents": [
-                    _agent_latlon(a) for a in range(A)
-                    if a not in (ego_id, ref_agent_idx)
-                    and agent_masks[b, a, :].bool().any().item()
-                ],
+        def _agent_latlon(a_idx):
+            xy = sequences[b, a_idx, :, G.XY].detach().cpu().numpy()
+            valid = agent_masks[b, a_idx, :].bool().detach().cpu().numpy()
+            xy_masked = np.where(valid[:, None], xy, np.nan)
+            return {
+                "agent_idx": a_idx,
+                "agent_type": AGENT_TYPE_NAMES.get(int(agent_types_flat[b, a_idx].item())),
+                "latlon_hist": xy_array_to_latlon(xy_masked[:hist_len], ref),
+                "latlon_fut": xy_array_to_latlon(xy_masked[hist_len:], ref),
             }
 
-            pred_xy_masked = np.where(ref_valid[:, None], pred_xy, np.nan)
-            out = {
-                "meta": {
-                    "airport": airport,
-                    "batch_idx": batch_idx,
-                    "sample_idx": b,
-                    "scene_file": target_scene_file,
-                    "ego_id": ego_id,
-                    "ref_agent_idx": ref_agent_idx,
-                    "ref_agent_type": AGENT_TYPE_NAMES.get(ref_type, str(ref_type)),
-                    "hist_len": hist_len,
-                    "start_heading_deg": start_heading_deg,
-                },
-                "gt": gt_out,
-                "prediction": {
-                    "dist_m": [None if np.isnan(v) else float(v) for v in pred_dist],
-                    "latlon": xy_array_to_latlon(pred_xy_masked, ref),
-                    "sigma_xy": [[float(sx), float(sy)] for sx, sy in pred_sigma],
-                },
-                "real": {"dist_m": [None if np.isnan(v) else float(v) for v in real_dist]},
-            }
-            with open(output_json, "w") as f:
-                json.dump(out, f, indent=2)
-            print(f"[case_trajectories_stgcnn] wrote {output_json}")
-            return
+        A = sequences.shape[1]
+        gt_out = {
+            "ego": _agent_latlon(ego_id),
+            "ref_agent": _agent_latlon(ref_agent_idx),
+            "other_agents": [
+                _agent_latlon(a) for a in range(A)
+                if a not in (ego_id, ref_agent_idx)
+                and agent_masks[b, a, :].bool().any().item()
+            ],
+        }
 
-    raise RuntimeError(f"scene_file={target_scene_file} never found in the full test set")
+        pred_xy_masked = np.where(ref_valid[:, None], pred_xy, np.nan)
+        out = {
+            "meta": {
+                "airport": airport,
+                "batch_idx": None,
+                "sample_idx": dataset_idx,
+                "scene_file": target_scene_file,
+                "ego_id": ego_id,
+                "ref_agent_idx": ref_agent_idx,
+                "ref_agent_type": AGENT_TYPE_NAMES.get(ref_type, str(ref_type)),
+                "hist_len": hist_len,
+                "start_heading_deg": start_heading_deg,
+            },
+            "gt": gt_out,
+            "prediction": {
+                "dist_m": [None if np.isnan(v) else float(v) for v in pred_dist],
+                "latlon": xy_array_to_latlon(pred_xy_masked, ref),
+                "sigma_xy": [[float(sx), float(sy)] for sx, sy in pred_sigma],
+            },
+            "real": {"dist_m": [None if np.isnan(v) else float(v) for v in real_dist]},
+        }
+        with open(output_json, "w") as f:
+            json.dump(out, f, indent=2)
+        print(f"[case_trajectories_stgcnn] wrote {output_json}")
 
 
 if __name__ == "__main__":
